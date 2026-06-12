@@ -10,15 +10,15 @@
 #   bash install.sh [lantern|xray|all]
 #
 # 远程一键安装：
-#   bash <(curl -Ls https://raw.githubusercontent.com/YOUR_USER/Libre/main/install.sh)
-#   bash <(curl -Ls https://raw.githubusercontent.com/YOUR_USER/Libre/main/install.sh) xray
+#   bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh)
+#   bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh) xray
 
 # ─────────────────────────────────────────────
 # 常量
 # ─────────────────────────────────────────────
 
 # GitHub Raw 文件根地址（修改为实际地址）
-RAW_BASE="https://raw.githubusercontent.com/YOUR_USER/Libre/main"
+RAW_BASE="https://raw.githubusercontent.com/iliYF/Libre/main"
 
 # 安装目录（可通过环境变量覆盖）
 INSTALL_DIR="${LIBRE_DIR:-/opt/libre}"

@@ -6,24 +6,26 @@
 #   xray     — 3x-ui（多协议代理）
 #
 # 用法：
-#   bash libre.sh <命令> [服务] [参数]
+#   libre <命令> [服务] [参数]
 #
 # 公共命令（支持 lantern / xray / all）：
-#   bash libre.sh status              # 查看所有服务状态
-#   bash libre.sh start lantern       # 启动 Lantern
-#   bash libre.sh stop xray           # 停止 Xray
-#   bash libre.sh restart all         # 重启所有服务
-#   bash libre.sh logs xray           # 查看 Xray 日志（必须指定服务）
-#   bash libre.sh shell lantern       # 进入 Lantern 容器终端（必须指定服务）
+#   libre status              # 查看所有服务状态
+#   libre start lantern       # 启动 Lantern
+#   libre stop xray           # 停止 Xray
+#   libre restart all         # 重启所有服务
+#   libre logs xray           # 查看 Xray 日志（必须指定服务）
+#   libre shell lantern       # 进入 Lantern 容器终端（必须指定服务）
 #
-# Lantern 专属命令：
-#   bash libre.sh gen-cert            # 生成自签名证书
+# Lantern 子命令：
+#   libre lantern gen-cert    # 生成自签名证书
+#   libre lantern help        # 查看 Lantern 所有子命令
 #
-# Xray 专属命令：
-#   bash libre.sh port [端口]         # 查看或修改面板端口
-#   bash libre.sh reset-port          # 重置端口为默认值
-#   bash libre.sh reset-creds         # 重置登录凭据
-#   bash libre.sh cli [命令]          # 执行 x-ui 内部命令
+# Xray 子命令：
+#   libre xray port [端口]    # 查看或修改面板端口
+#   libre xray reset-port     # 重置端口为默认值
+#   libre xray reset-creds    # 重置登录凭据
+#   libre xray cli [命令]     # 执行 x-ui 内部命令
+#   libre xray help           # 查看 Xray 所有子命令
 
 # ─────────────────────────────────────────────
 # 常量
@@ -144,43 +146,73 @@ dispatch() {
 show_help() {
     local me
     me="$(basename "$0")"
-    printf '%b\n' "${BOLD}用法: $me <命令> [服务] [参数]${NC}"
+    printf '%b\n' "${BOLD}用法: $me <命令> [服务/参数]${NC}"
     printf '\n'
-    printf '%b\n' "${BOLD}服务:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "lantern  " "Lantern Server Manager（WireGuard VPN）"
-    printf "  ${GREEN}%s${NC} %s\n" "xray     " "3x-ui（多协议代理）"
-    printf "  ${GREEN}%s${NC} %s\n" "all      " "所有服务（默认）"
-    printf '\n'
-    printf '%b\n' "${BOLD}命令:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "status  [服务]  " "查看运行状态"
-    printf "  ${GREEN}%s${NC} %s\n" "start   [服务]  " "启动服务"
-    printf "  ${GREEN}%s${NC} %s\n" "stop    [服务]  " "停止服务"
-    printf "  ${GREEN}%s${NC} %s\n" "restart [服务]  " "重启服务"
-    printf "  ${GREEN}%s${NC} %s\n" "update  [服务]  " "拉取最新镜像并重启"
+    printf '%b\n' "${BOLD}公共命令（服务：lantern / xray / all）:${NC}"
+    printf "  ${GREEN}%s${NC} %s\n" "status  [服务]  " "查看运行状态（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "start   [服务]  " "启动服务（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "stop    [服务]  " "停止服务（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "restart [服务]  " "重启服务（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "update  [服务]  " "拉取最新镜像并重启（默认 all）"
     printf "  ${GREEN}%s${NC} %s\n" "logs    <服务>  " "查看容器日志（实时，必须指定服务）"
     printf "  ${GREEN}%s${NC} %s\n" "shell   <服务>  " "进入容器终端（必须指定服务）"
-    printf "  ${GREEN}%s${NC} %s\n" "ip      [服务]  " "显示公网 IP"
-    printf "  ${GREEN}%s${NC} %s\n" "install [服务]  " "安装并首次启动服务"
+    printf "  ${GREEN}%s${NC} %s\n" "ip      [服务]  " "显示公网 IP（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "install [服务]  " "安装并首次启动服务（默认 all）"
     printf '\n'
-    printf '%b\n' "${BOLD}Lantern 专属命令:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert        " "生成自签名证书到 config/ 目录"
+    printf '%b\n' "${BOLD}Lantern 子命令:${NC}"
+    printf "  ${GREEN}%s${NC} %s\n" "lantern <子命令>  " "执行 Lantern 专属操作"
+    printf "  ${BLUE}%s${NC} %s\n" "  gen-cert        " "生成自签名证书"
+    printf "  ${BLUE}%s${NC} %s\n" "  help            " "查看所有 Lantern 子命令"
     printf '\n'
-    printf '%b\n' "${BOLD}Xray 专属命令:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "port    [端口]  " "查看或修改面板端口"
-    printf "  ${GREEN}%s${NC} %s\n" "reset-port      " "重置端口为默认值"
-    printf "  ${GREEN}%s${NC} %s\n" "reset-creds     " "从 .env 重置登录凭据"
-    printf "  ${GREEN}%s${NC} %s\n" "cli     [命令]  " "在容器内执行 x-ui 命令"
+    printf '%b\n' "${BOLD}Xray 子命令:${NC}"
+    printf "  ${GREEN}%s${NC} %s\n" "xray <子命令>     " "执行 Xray 专属操作"
+    printf "  ${BLUE}%s${NC} %s\n" "  port [端口]     " "查看或修改面板端口"
+    printf "  ${BLUE}%s${NC} %s\n" "  reset-port      " "重置端口为默认值"
+    printf "  ${BLUE}%s${NC} %s\n" "  reset-creds     " "从 .env 重置登录凭据"
+    printf "  ${BLUE}%s${NC} %s\n" "  cli [命令]      " "在容器内执行 x-ui 命令"
+    printf "  ${BLUE}%s${NC} %s\n" "  help            " "查看所有 Xray 子命令"
     printf '\n'
     printf '%b\n' "${BOLD}help            显示此帮助信息${NC}"
     printf '\n'
     printf '%b\n' "${BOLD}示例:${NC}"
-    printf "  bash %s status\n"             "$me"
-    printf "  bash %s start lantern\n"      "$me"
-    printf "  bash %s restart all\n"        "$me"
-    printf "  bash %s logs xray\n"          "$me"
-    printf "  bash %s gen-cert\n"           "$me"
-    printf "  bash %s port 8443\n"          "$me"
-    printf "  bash %s cli setting -show\n"  "$me"
+    printf "  %s status\n"                    "$me"
+    printf "  %s start lantern\n"             "$me"
+    printf "  %s restart all\n"               "$me"
+    printf "  %s logs xray\n"                 "$me"
+    printf "  %s lantern gen-cert\n"          "$me"
+    printf "  %s xray port 8443\n"            "$me"
+    printf "  %s xray cli setting -show\n"    "$me"
+}
+
+# Lantern 子命令帮助
+show_lantern_help() {
+    local me
+    me="$(basename "$0")"
+    printf '%b\n' "${BOLD}用法: $me lantern <子命令> [参数]${NC}"
+    printf '\n'
+    printf '%b\n' "${BOLD}子命令:${NC}"
+    printf "  ${GREEN}%s${NC} %s\n" "gen-cert  " "生成自签名证书到数据目录"
+    printf "  ${GREEN}%s${NC} %s\n" "help      " "显示此帮助信息"
+    printf '\n'
+    printf '%b\n' "${YELLOW}提示：start / stop / restart / status / update / logs / shell / ip${NC}"
+    printf '%b\n' "${YELLOW}      等公共命令请使用：$me <命令> lantern${NC}"
+}
+
+# Xray 子命令帮助
+show_xray_help() {
+    local me
+    me="$(basename "$0")"
+    printf '%b\n' "${BOLD}用法: $me xray <子命令> [参数]${NC}"
+    printf '\n'
+    printf '%b\n' "${BOLD}子命令:${NC}"
+    printf "  ${GREEN}%s${NC} %s\n" "port [端口]  " "查看或修改面板端口"
+    printf "  ${GREEN}%s${NC} %s\n" "reset-port   " "重置端口为默认值（2026）"
+    printf "  ${GREEN}%s${NC} %s\n" "reset-creds  " "从 .env 重置登录凭据"
+    printf "  ${GREEN}%s${NC} %s\n" "cli [命令]   " "在容器内执行 x-ui 命令"
+    printf "  ${GREEN}%s${NC} %s\n" "help         " "显示此帮助信息"
+    printf '\n'
+    printf '%b\n' "${YELLOW}提示：start / stop / restart / status / update / logs / shell / ip${NC}"
+    printf '%b\n' "${YELLOW}      等公共命令请使用：$me <命令> xray${NC}"
 }
 
 # ─────────────────────────────────────────────
@@ -190,7 +222,53 @@ CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
-    # logs / shell 必须指定具体服务，不支持 all
+    # ── Lantern 子命令入口 ──────────────────────
+    lantern)
+        SUBCMD="${1:-help}"
+        shift || true
+        case "$SUBCMD" in
+            gen-cert)
+                print_header "Lantern — gen-cert"
+                run_lantern gen-cert
+                ;;
+            help|--help|-h)
+                show_lantern_help
+                ;;
+            *)
+                printf '%b\n' "${RED}❌ 未知 Lantern 子命令：$SUBCMD${NC}"
+                printf '\n'
+                show_lantern_help
+                exit 1
+                ;;
+        esac
+        ;;
+
+    # ── Xray 子命令入口 ────────────────────────
+    xray)
+        SUBCMD="${1:-help}"
+        shift || true
+        case "$SUBCMD" in
+            port|reset-port|reset-creds)
+                print_header "Xray — $SUBCMD"
+                run_xray "$SUBCMD" "$@"
+                ;;
+            cli)
+                print_header "Xray — cli"
+                run_xray cli "$@"
+                ;;
+            help|--help|-h)
+                show_xray_help
+                ;;
+            *)
+                printf '%b\n' "${RED}❌ 未知 Xray 子命令：$SUBCMD${NC}"
+                printf '\n'
+                show_xray_help
+                exit 1
+                ;;
+        esac
+        ;;
+
+    # ── logs / shell 必须指定具体服务，不支持 all ──
     logs|shell)
         SVC="${1:-}"
         if [ -z "$SVC" ] || [ "$SVC" = "all" ]; then
@@ -202,35 +280,18 @@ case "$CMD" in
         dispatch "$CMD" "$SVC" "$@"
         ;;
 
-    # install 委托给 install.sh
+    # ── install 委托给 install.sh ──────────────
     install)
         SVC="${1:-all}"
         parse_service "$SVC" > /dev/null
         bash "$SCRIPT_DIR/install.sh" "$SVC"
         ;;
 
-    # 通用命令：支持 lantern / xray / all（默认 all）
+    # ── 公共命令：支持 lantern / xray / all ────
     status|start|stop|restart|update|ip)
         SVC=$(parse_service "${1:-all}")
         shift || true
         dispatch "$CMD" "$SVC" "$@"
-        ;;
-
-    # Lantern 专属命令
-    gen-cert)
-        print_header "Lantern — gen-cert"
-        run_lantern gen-cert
-        ;;
-
-    # Xray 专属命令
-    port|reset-port|reset-creds)
-        print_header "Xray — $CMD"
-        run_xray "$CMD" "$@"
-        ;;
-
-    cli)
-        print_header "Xray — cli"
-        run_xray cli "$@"
         ;;
 
     help|--help|-h)

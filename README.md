@@ -16,44 +16,99 @@ Libre/
 
 ### 远程一键安装（推荐）
 
+#### 交互式菜单安装
 ```bash
-# 交互式菜单
 bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh)
+```
 
-# 直接指定目标
+#### 仅安装 Lantern
+```bash
 bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh) lantern
+```
+
+#### 仅安装 Xray
+```bash
 bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh) xray
+```
+
+#### 安装全部服务
+```bash
 bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh) all
 ```
 
-> 远程执行时会自动将所需文件下载到 `/opt/libre`，可通过环境变量自定义路径：
-> ```bash
-> LIBRE_DIR=/home/user/libre bash <(curl -Ls ...)
-> ```
+#### 自定义安装路径
+```bash
+LIBRE_DIR=/home/user/libre bash <(curl -Ls https://raw.githubusercontent.com/iliYF/Libre/main/install.sh) all
+```
+
+> 远程执行时会自动将所需文件下载到 `/opt/libre`，可通过环境变量自定义路径。
 
 ### 本地安装
 
+#### 克隆仓库
 ```bash
 git clone https://github.com/iliYF/Libre.git && cd Libre
+```
 
-# 交互式菜单，选择安装任意一个或全部
+#### 交互式菜单安装
+```bash
 bash install.sh
+```
 
-# 或直接指定目标
-bash install.sh lantern   # 仅安装 Lantern
-bash install.sh xray      # 仅安装 Xray
-bash install.sh all       # 全部安装
+#### 仅安装 Lantern
+```bash
+bash install.sh lantern
+```
+
+#### 仅安装 Xray
+```bash
+bash install.sh xray
+```
+
+#### 安装全部服务
+```bash
+bash install.sh all
 ```
 
 安装完成后，`libre` 命令已注册到系统，可直接使用：
 
+#### 查看服务状态
 ```bash
-libre status              # 查看所有服务状态
+libre status
+```
+
+#### 启动服务
+```bash
 libre start lantern       # 启动 Lantern
+libre start xray          # 启动 Xray
+libre start all           # 启动所有服务
+```
+
+#### 停止服务
+```bash
+libre stop lantern        # 停止 Lantern
 libre stop xray           # 停止 Xray
+libre stop all            # 停止所有服务
+```
+
+#### 重启服务
+```bash
+libre restart lantern     # 重启 Lantern
+libre restart xray        # 重启 Xray
 libre restart all         # 重启所有服务
+```
+
+#### 查看日志
+```bash
+libre logs lantern        # 查看 Lantern 日志
 libre logs xray           # 查看 Xray 日志
+```
+
+#### 更新服务
+```bash
 libre update              # 更新所有服务
+libre update lantern      # 仅更新 Lantern
+libre update xray         # 仅更新 Xray
 ```
 
 ---
@@ -118,7 +173,7 @@ https://<服务器IP>:18080
 | `libre restart lantern` | 重启服务 |
 | `libre status lantern` | 查看运行状态与访问地址 |
 | `libre update lantern` | 拉取最新镜像并重启 |
-| `libre gen-cert` | 手动重新生成自签名证书 |
+| `libre lantern gen-cert` | 手动重新生成自签名证书 |
 | `libre shell lantern` | 进入容器交互式终端 |
 | `libre logs lantern` | 实时查看容器日志 |
 | `libre ip lantern` | 显示当前公网 IP |
@@ -155,7 +210,7 @@ xray/
 libre start xray
 
 # 指定端口启动
-libre port 8443 && libre start xray
+libre xray port 8443 && libre start xray
 ```
 
 访问面板：
@@ -174,11 +229,11 @@ http://<服务器IP>:2026/panel
 | `libre stop xray` | 停止服务 |
 | `libre restart xray` | 重启服务 |
 | `libre status xray` | 查看运行状态及访问地址 |
-| `libre port [端口]` | 查看或修改面板端口 |
-| `libre reset-port` | 重置端口为默认值（2026） |
-| `libre reset-creds` | 从 `.env` 读取用户名/密码并重置登录凭据 |
+| `libre xray port [端口]` | 查看或修改面板端口 |
+| `libre xray reset-port` | 重置端口为默认值（2026） |
+| `libre xray reset-creds` | 从 `.env` 读取用户名/密码并重置登录凭据 |
 | `libre update xray` | 拉取最新镜像并重启 |
-| `libre cli [命令]` | 在容器内执行 x-ui 命令 |
+| `libre xray cli [命令]` | 在容器内执行 x-ui 命令 |
 | `libre shell xray` | 进入容器交互式终端 |
 | `libre logs xray` | 查看容器日志（实时） |
 | `libre ip xray` | 显示公网 IP |
@@ -193,7 +248,7 @@ http://<服务器IP>:2026/panel
 | 数据库路径（宿主机） | `./db/` |
 | SSL 证书目录 | `./cert/` |
 
-自定义登录凭据：在 `xray/` 目录下创建 `.env` 文件后执行 `libre reset-creds`：
+自定义登录凭据：在 `xray/` 目录下创建 `.env` 文件后执行 `libre xray reset-creds`：
 
 ```env
 XUI_USERNAME=your_username
@@ -201,3 +256,16 @@ XUI_PASSWORD=your_password
 ```
 
 > 容器使用**宿主机网络模式**（`network_mode: host`），无需端口映射，所有入站端口直接监听在宿主机上。
+
+---
+
+## License
+
+本项目基于 [MIT License](LICENSE) 开源。
+
+本项目集成了以下开源项目，各自遵循其原始许可证：
+
+| 项目 | 许可证 |
+|------|--------|
+| [Lantern Server Manager](https://github.com/getlantern/lantern-server-manager) | Apache 2.0 |
+| [3x-ui](https://github.com/MHSanaei/3x-ui) | GPL-3.0 |
