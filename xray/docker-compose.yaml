@@ -17,10 +17,12 @@ services:
     environment:
       # 是否强制启用 VMess AEAD 加密（false = 兼容旧客户端）
       XRAY_VMESS_AEAD_FORCED: "false"
-      # 是否启用 Fail2ban 防暴力破解（需要宿主机已安装 fail2ban）
-      XUI_ENABLE_FAIL2BAN: "true"
+      # 是否启用 Fail2ban 防暴力破解（需要宿主机已安装 fail2ban，且容器需要访问宿主机日志目录）
+      XUI_ENABLE_FAIL2BAN: "false"
     # 分配伪终端，保证日志输出正常
     tty: true
+    # 授予容器完整权限，解决 SQLite 文件锁在某些 CentOS 内核下被 seccomp 限制的问题
+    privileged: true
     # 使用宿主机网络，无需端口映射，性能更好，面板端口默认 2053
     network_mode: host
     # 非手动停止时自动重启（宿主机重启后自动拉起）

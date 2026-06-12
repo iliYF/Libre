@@ -169,6 +169,28 @@ reset_port() {
     set_port "$DEFAULT_PORT"
 }
 
+# 从 .env 文件读取用户名和密码并重置面板登录凭据
+reset_credentials() {
+    local env_file
+    env_file="$(dirname "$0")/.env"
+
+    [ -f "$env_file" ] || { printf '%b\n' "${RED}❌ 未找到 .env 文件: $env_file${NC}"; return 1; }
+
+    local username password
+    username=$(grep -E '^XUI_USERNAME=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+    password=$(grep -E '^XUI_PASSWORD=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+
+    [ -n "$username" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_USERNAME${NC}"; return 1; }
+    [ -n "$password" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_PASSWORD${NC}"; return 1; }
+
+    printf '%b\n' "${CYAN}🔑 重置登录凭据 (用户名: $username)...${NC}"
+    cli setting -username "$username" -password "$password" \
+        || { printf '%b\n' "${RED}❌ 凭据重置失败${NC}"; return 1; }
+
+    docker restart "$CONTAINER"
+    printf '%b\n' "${GREEN}✅ 登录凭据已更新，请使用新用户名和密码登录${NC}"
+}
+
 # 拉取最新镜像并重启
 update() {
     printf '%b\n' "${CYAN}⬆️  拉取最新镜像...${NC}"
@@ -220,6 +242,7 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "status         " "查看运行状态"
     printf "  ${GREEN}%s${NC} %s\n" "port [端口]    " "查看或修改面板端口"
     printf "  ${GREEN}%s${NC} %s\n" "reset-port     " "重置端口为默认值 ($DEFAULT_PORT)"
+    printf "  ${GREEN}%s${NC} %s\n" "reset-creds    " "从 .env 读取用户名/密码并重置登录凭据"
     printf "  ${GREEN}%s${NC} %s\n" "update         " "拉取最新镜像并重启"
     printf "  ${GREEN}%s${NC} %s\n" "cli [命令]     " "在容器内执行 x-ui 命令 (无参数显示 x-ui 帮助)"
     printf "  ${GREEN}%s${NC} %s\n" "shell          " "进入容器交互式终端"
@@ -237,7 +260,8 @@ case "${1:-help}" in
     restart)    restart "$2"    ;;
     status)     status          ;;
     port)       set_port "$2"   ;;
-    reset-port) reset_port      ;;
+    reset-port)  reset_port        ;;
+    reset-creds) reset_credentials ;;
     update)     update          ;;
     cli)        run_cli "${@:2}"  ;;
     shell)      shell           ;;
