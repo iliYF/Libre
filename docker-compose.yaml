@@ -1,0 +1,27 @@
+# 3x-ui Docker Compose 配置
+# 镜像来源：https://hub.docker.com/r/bigbugcc/3x-ui
+# 该镜像基于官方 3x-ui 构建，支持 amd64 / arm64 / armv7 多架构
+# 项目地址：https://github.com/MHSanaei/3x-ui
+
+services:
+  3xui:
+    # 使用 bigbugcc 维护的最新版镜像，如需固定版本可替换为具体 tag，如 bigbugcc/3x-ui:3.3.0
+    image: bigbugcc/3x-ui:latest
+    container_name: 3x-ui
+    # hostname: yourhostname  # 可选：设置容器主机名
+    volumes:
+      # 数据库及配置文件持久化目录（SQLite 数据库存放于此）
+      - $PWD/db/:/etc/x-ui/
+      # SSL 证书目录，用于 HTTPS / TLS 配置
+      - $PWD/cert/:/root/cert/
+    environment:
+      # 是否强制启用 VMess AEAD 加密（false = 兼容旧客户端）
+      XRAY_VMESS_AEAD_FORCED: "false"
+      # 是否启用 Fail2ban 防暴力破解（需要宿主机已安装 fail2ban）
+      XUI_ENABLE_FAIL2BAN: "true"
+    # 分配伪终端，保证日志输出正常
+    tty: true
+    # 使用宿主机网络，无需端口映射，性能更好，面板端口默认 2053
+    network_mode: host
+    # 非手动停止时自动重启（宿主机重启后自动拉起）
+    restart: unless-stopped
