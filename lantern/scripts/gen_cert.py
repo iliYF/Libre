@@ -22,7 +22,9 @@ from cryptography.x509.oid import NameOID
 
 
 # 证书输出目录
-CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config")
+# 优先读取环境变量 LIBRE_DATA_DIR，默认使用 /usr/local/app/libre/lantern
+_data_dir = os.environ.get("LIBRE_DATA_DIR", "/usr/local/app/libre/lantern")
+CONFIG_DIR = os.path.join(_data_dir, "config")
 CERT_PATH = os.path.join(CONFIG_DIR, "cert.pem")
 KEY_PATH = os.path.join(CONFIG_DIR, "key.pem")
 

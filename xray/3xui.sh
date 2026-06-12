@@ -17,10 +17,28 @@
 # ─────────────────────────────────────────────
 
 # ─────────────────────────────────────────────
+# 脚本目录（追踪软链接，兼容 Linux / macOS）
+# ─────────────────────────────────────────────
+_resolve_script_dir() {
+    local src="$0"
+    while [ -L "$src" ]; do
+        local link_dir
+        link_dir="$(cd "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        [[ "$src" != /* ]] && src="$link_dir/$src"
+    done
+    cd "$(dirname "$src")" && pwd
+}
+SCRIPT_DIR="$(_resolve_script_dir)"
+
+# ─────────────────────────────────────────────
 # 常量配置
 # ─────────────────────────────────────────────
 DEFAULT_PORT=2026
 CONTAINER="3x-ui"
+
+# 数据目录（db、cert 等运行时数据）
+DATA_DIR="${LIBRE_DATA_DIR:-/usr/local/app/libre/xray}"
 
 # 颜色变量 (当终端不支持颜色时自动降级)
 if [ -t 1 ]; then
@@ -60,11 +78,13 @@ get_port() {
 }
 
 # 检测 docker compose 命令 (兼容新旧版本)
+# 始终以 SCRIPT_DIR 为项目目录执行，挂载路径由 docker-compose.yaml 中的 LIBRE_DATA_DIR 环境变量控制
 docker_compose() {
+    local compose_file="$SCRIPT_DIR/docker-compose.yaml"
     if docker compose version &>/dev/null; then
-        docker compose "$@"
+        docker compose -f "$compose_file" --project-directory "$SCRIPT_DIR" "$@"
     else
-        docker-compose "$@"
+        docker-compose -f "$compose_file" --project-directory "$SCRIPT_DIR" "$@"
     fi
 }
 
@@ -172,7 +192,7 @@ reset_port() {
 # 从 .env 文件读取用户名和密码并重置面板登录凭据
 reset_credentials() {
     local env_file
-    env_file="$(dirname "$0")/.env"
+    env_file="$SCRIPT_DIR/.env"  # .env 属于脚本配置，保留在脚本目录
 
     [ -f "$env_file" ] || { printf '%b\n' "${RED}❌ 未找到 .env 文件: $env_file${NC}"; return 1; }
 

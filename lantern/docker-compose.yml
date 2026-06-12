@@ -13,8 +13,8 @@ services:
       # VPN 端口（TCP）
       - "${VPN_PORT:-30001}:30001"
     volumes:
-      # 持久化配置目录
-      - ./config:/config
+      # 持久化配置目录（数据目录由 LIBRE_DATA_DIR 环境变量指定）
+      - ${LIBRE_DATA_DIR:-/usr/local/app/libre/lantern}/config:/config
     # ENTRYPOINT 已是 serve，此处只需传追加参数
     # 证书文件需提前放入 ./config 目录（容器内无法使用 Let's Encrypt 自动签发）
     command:

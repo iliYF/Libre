@@ -19,8 +19,21 @@ DEFAULT_API_PORT=18080
 DEFAULT_VPN_PORT=30001
 CONTAINER="lantern"
 
-# 项目根目录（脚本位于 scripts/ 子目录下）
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# 脚本目录（追踪软链接，兼容 Linux / macOS）
+_resolve_script_dir() {
+    local src="$0"
+    while [ -L "$src" ]; do
+        local link_dir
+        link_dir="$(cd "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        [[ "$src" != /* ]] && src="$link_dir/$src"
+    done
+    cd "$(dirname "$src")" && pwd
+}
+SCRIPT_DIR="$(_resolve_script_dir)"
+
+# 数据目录（证书、配置等运行时数据）
+DATA_DIR="${LIBRE_DATA_DIR:-/usr/local/app/libre/lantern}"
 
 # 颜色变量 (当终端不支持颜色时自动降级)
 if [ -t 1 ]; then
@@ -50,12 +63,12 @@ get_ip() {
     return 1
 }
 
-# 检测 docker compose 命令 (兼容新旧版本，始终在项目根目录执行)
+# 检测 docker compose 命令 (兼容新旧版本，始终在脚本目录执行)
 docker_compose() {
     if docker compose version &>/dev/null; then
-        docker compose -f "$ROOT_DIR/docker-compose.yml" "$@"
+        docker compose -f "$SCRIPT_DIR/docker-compose.yml" --project-directory "$SCRIPT_DIR" "$@"
     else
-        docker-compose -f "$ROOT_DIR/docker-compose.yml" "$@"
+        docker-compose -f "$SCRIPT_DIR/docker-compose.yml" --project-directory "$SCRIPT_DIR" "$@"
     fi
 }
 
@@ -76,17 +89,20 @@ is_running() {
 
 # 检查证书文件是否存在
 check_certs() {
-    local cert="$ROOT_DIR/config/cert.pem"
-    local key="$ROOT_DIR/config/key.pem"
+    local cert="$DATA_DIR/config/cert.pem"
+    local key="$DATA_DIR/config/key.pem"
+
+    # 确保数据目录存在
+    mkdir -p "$DATA_DIR/config"
 
     if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
         printf '%b\n' "${YELLOW}⚠️  未找到证书文件，尝试自动生成...${NC}"
-        if [ -f "$ROOT_DIR/scripts/gen_cert.py" ]; then
-            python3 "$ROOT_DIR/scripts/gen_cert.py" \
+        if [ -f "$SCRIPT_DIR/scripts/gen_cert.py" ]; then
+            LIBRE_DATA_DIR="$DATA_DIR" python3 "$SCRIPT_DIR/scripts/gen_cert.py" \
                 && printf '%b\n' "${GREEN}✅ 证书生成成功${NC}" \
-                || { printf '%b\n' "${RED}❌ 证书生成失败，请手动将 cert.pem / key.pem 放入 config/ 目录${NC}"; return 1; }
+                || { printf '%b\n' "${RED}❌ 证书生成失败，请手动将 cert.pem / key.pem 放入 $DATA_DIR/config/ 目录${NC}"; return 1; }
         else
-            printf '%b\n' "${RED}❌ 未找到 gen_cert.py，请手动将 cert.pem / key.pem 放入 config/ 目录${NC}"
+            printf '%b\n' "${RED}❌ 未找到 gen_cert.py，请手动将 cert.pem / key.pem 放入 $DATA_DIR/config/ 目录${NC}"
             return 1
         fi
     fi
@@ -182,9 +198,10 @@ show_ip() {
 
 # 生成自签名证书
 gen_cert() {
-    if [ -f "$ROOT_DIR/scripts/gen_cert.py" ]; then
-        python3 "$ROOT_DIR/scripts/gen_cert.py" \
-            && printf '%b\n' "${GREEN}✅ 证书已生成到 config/ 目录${NC}" \
+    mkdir -p "$DATA_DIR/config"
+    if [ -f "$SCRIPT_DIR/scripts/gen_cert.py" ]; then
+        LIBRE_DATA_DIR="$DATA_DIR" python3 "$SCRIPT_DIR/scripts/gen_cert.py" \
+            && printf '%b\n' "${GREEN}✅ 证书已生成到 $DATA_DIR/config/ 目录${NC}" \
             || printf '%b\n' "${RED}❌ 证书生成失败${NC}"
     else
         printf '%b\n' "${RED}❌ 未找到 gen_cert.py${NC}"

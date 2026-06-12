@@ -11,9 +11,9 @@ services:
     # hostname: yourhostname  # 可选：设置容器主机名
     volumes:
       # 数据库及配置文件持久化目录（SQLite 数据库存放于此）
-      - $PWD/db/:/etc/x-ui/
+      - ${LIBRE_DATA_DIR:-/usr/local/app/libre/xray}/db/:/etc/x-ui/
       # SSL 证书目录，用于 HTTPS / TLS 配置
-      - $PWD/cert/:/root/cert/
+      - ${LIBRE_DATA_DIR:-/usr/local/app/libre/xray}/cert/:/root/cert/
     environment:
       # 是否强制启用 VMess AEAD 加密（false = 兼容旧客户端）
       XRAY_VMESS_AEAD_FORCED: "false"
