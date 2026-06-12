@@ -1,0 +1,30 @@
+services:
+  lantern-server-manager:
+    image: getlantern/lantern-server-manager:latest
+    container_name: lantern
+    restart: unless-stopped
+    environment:
+      # 禁用 firewalld 和 systemd（容器内不可用）
+      - NO_FIREWALLD=true
+      - NO_SYSTEMD=true
+    ports:
+      # Web UI / REST API 端口
+      - "${API_PORT:-18080}:18080"
+      # VPN 端口（TCP）
+      - "${VPN_PORT:-30001}:30001"
+    volumes:
+      # 持久化配置目录
+      - ./config:/config
+    # ENTRYPOINT 已是 serve，此处只需传追加参数
+    # 证书文件需提前放入 ./config 目录（容器内无法使用 Let's Encrypt 自动签发）
+    command:
+      - -d
+      - /config
+      - --vpn-port
+      - "${VPN_PORT:-30001}"
+      - --api-port
+      - "${API_PORT:-18080}"
+      - --cert
+      - /config/cert.pem
+      - --key
+      - /config/key.pem
