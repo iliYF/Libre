@@ -8,8 +8,8 @@ CONFIG_DIR="$_data_dir/config"
 CERT_PATH="$CONFIG_DIR/cert.pem"
 KEY_PATH="$CONFIG_DIR/key.pem"
 
-# 证书有效期（天）
-CERT_VALID_DAYS=3650
+# 证书有效期（天），不超过 398 天（CA/Browser Forum 规定）
+CERT_VALID_DAYS=397
 
 # 检查 openssl 是否可用
 check_openssl() {
@@ -68,7 +68,8 @@ O = Lantern Server
 CN = $server_ip
 
 [v3_req]
-keyUsage = digitalSignature, keyEncipherment
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
