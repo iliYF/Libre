@@ -122,7 +122,7 @@ cli() {
 read_env() {
     local key="$1"
     local default="${2:-}"
-    local env_file="$SCRIPT_DIR/.env"
+    local env_file="$DATA_DIR/.env"
     local val
     val=$(grep -E "^${key}=" "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
     echo "${val:-$default}"
@@ -131,7 +131,7 @@ read_env() {
 # 初始化 .env 配置（首次启动时引导用户设置端口和凭据）
 # 密码为必填项，不允许为空；WebBasePath 为可选项
 _init_env() {
-    local env_file="$SCRIPT_DIR/.env"
+    local env_file="$DATA_DIR/.env"
 
     # 读取已有配置（.env 存在时）
     local cur_port cur_username cur_password cur_web_base_path
@@ -249,7 +249,7 @@ start() {
     if [ -n "$arg_username" ] && [ -n "$arg_password" ]; then
         local cur_web_base_path
         cur_web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
-        _save_env "$SCRIPT_DIR/.env" "${port:-$DEFAULT_PORT}" "$arg_username" "$arg_password" "$cur_web_base_path"
+        _save_env "$DATA_DIR/.env" "${port:-$DEFAULT_PORT}" "$arg_username" "$arg_password" "$cur_web_base_path"
     else
         # 确保 .env 存在且密码已设置，否则交互式引导
         _init_env
@@ -320,11 +320,13 @@ start() {
 
     printf '%b\n' "${GREEN}✅ 启动完成${NC}"
     printf '%b\n' ""
-    show_config
-    printf '%b\n' ""
     printf '%b\n' "${BOLD}登录信息:${NC}"
     printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
     printf '%b\n' "   ${BLUE}🔑 密码:${NC}   $password"
+    local access_path="${web_base_path:-/}"
+    local host_ip
+    host_ip=$(get_ip)
+    printf '%b\n' "   ${BLUE}🌐 访问地址:${NC} http://${host_ip}:${port}${access_path}"
 }
 # 停止服务
 stop() {
@@ -408,7 +410,7 @@ web_path_cmd() {
     fi
 
     # 同步保存到 .env
-    local env_file="$SCRIPT_DIR/.env"
+    local env_file="$DATA_DIR/.env"
     local port username password
     port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
     username=$(read_env "XUI_USERNAME" "admin")
@@ -428,7 +430,7 @@ web_path_cmd() {
 #   creds                    — 交互式修改用户名和密码（保存到 .env）
 #   creds <用户名> <密码>    — 直接设置（非交互式，适合脚本调用）
 creds_cmd() {
-    local env_file="$SCRIPT_DIR/.env"
+    local env_file="$DATA_DIR/.env"
 
     # ── 非交互式：直接传参设置 ──────────────────
     if [ -n "$1" ]; then
@@ -528,8 +530,7 @@ _save_env() {
     # 备份原文件
     [ -f "$env_file" ] && cp "$env_file" "${env_file}.bak" 2>/dev/null
 
-    if [ -n "$web_base_path" ]; then
-        cat > "$env_file" << EOF
+    cat > "$env_file" << EOF
 # 3x-ui 配置
 # 修改后执行 restart 命令生效
 
@@ -545,21 +546,6 @@ XUI_PASSWORD=$password
 # 面板 WebBasePath（可选，留空则不启用）
 XUI_WEB_BASE_PATH=$web_base_path
 EOF
-    else
-        cat > "$env_file" << EOF
-# 3x-ui 配置
-# 修改后执行 restart 命令生效
-
-# 面板端口
-XUI_PORT=$port
-
-# 面板登录用户名
-XUI_USERNAME=$username
-
-# 面板登录密码（建议修改为强密码）
-XUI_PASSWORD=$password
-EOF
-    fi
     printf '%b\n' "${GREEN}✅ 配置已保存到 .env${NC}"
 }
 
@@ -602,7 +588,7 @@ logs() {
 show_config() {
     is_running || { printf '%b\n' "${RED}❌ 容器未运行，请先执行 start${NC}"; return 1; }
     printf '%b\n' "${CYAN}📋 当前面板配置:${NC}"
-    echo "Y" | docker exec -i "$CONTAINER" /app/x-ui setting -show true
+    echo "Y" | docker exec -i "$CONTAINER" /app/x-ui setting -show
 }
 
 # 显示公网 IP

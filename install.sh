@@ -216,7 +216,7 @@ create_xray_default_env() {
         web_base_path="$input_web_base_path"
     fi
 
-    # 写入 .env
+    # 写入 .env（WebBasePath 无论是否为空都写入该行，表示用户已做过选择）
     cat > "$env_file" << EOF
 # 3x-ui 配置
 # 修改后重启服务生效
@@ -229,11 +229,10 @@ XUI_USERNAME=$username
 
 # 面板登录密码（建议修改为强密码）
 XUI_PASSWORD=$password
+
+# 面板访问路径前缀（可选，留空则不启用）
+XUI_WEB_BASE_PATH=$web_base_path
 EOF
-    # WebBasePath 仅在非空时写入
-    if [ -n "$web_base_path" ]; then
-        printf '\n# 面板访问路径前缀（如 /abc1234）\nXUI_WEB_BASE_PATH=%s\n' "$web_base_path" >> "$env_file"
-    fi
 
     printf '%b\n' "${GREEN}✅ 已保存 Xray .env 配置文件：$env_file${NC}"
     printf '%b\n' "   ${BLUE}🌐 面板端口:${NC} $port"
