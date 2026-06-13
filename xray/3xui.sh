@@ -1,5 +1,5 @@
 #!/bin/bash
-# 3x-ui 管理脚本 v3.0
+# 3x-ui 管理脚本 v3.1
 #
 # 镜像：bigbugcc/3x-ui
 # Docker Hub：https://hub.docker.com/r/bigbugcc/3x-ui
@@ -117,42 +117,203 @@ cli() {
     docker exec "$CONTAINER" /app/x-ui "$@"
 }
 
+# 从 .env 读取配置值
+# 用法：read_env <KEY> [默认值]
+read_env() {
+    local key="$1"
+    local default="${2:-}"
+    local env_file="$SCRIPT_DIR/.env"
+    local val
+    val=$(grep -E "^${key}=" "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+    echo "${val:-$default}"
+}
+
+# 初始化 .env 配置（首次启动时引导用户设置端口和凭据）
+# 密码为必填项，不允许为空；WebBasePath 为可选项
+_init_env() {
+    local env_file="$SCRIPT_DIR/.env"
+
+    # 读取已有配置（.env 存在时）
+    local cur_port cur_username cur_password cur_web_base_path
+    cur_port=$(read_env "XUI_PORT" "")
+    cur_username=$(read_env "XUI_USERNAME" "")
+    cur_password=$(read_env "XUI_PASSWORD" "")
+    cur_web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
+
+    # 端口、用户名、密码均已配置且密码非空，直接返回
+    if [ -n "$cur_port" ] && [ -n "$cur_username" ] && [ -n "$cur_password" ]; then
+        return 0
+    fi
+
+    printf '%b\n' "${CYAN}🔧 首次启动，请完成初始化配置${NC}"
+    printf '%b\n' "   ${YELLOW}⚠️  镜像默认密码随机生成，必须手动设置后才能登录${NC}"
+    printf '%b\n' ""
+
+    # 端口
+    local port="${cur_port:-$DEFAULT_PORT}"
+    printf '%b' "${BLUE}面板端口 [默认: $port]: ${NC}"
+    read -r input_port
+    if [ -n "$input_port" ]; then
+        if [[ "$input_port" =~ ^[0-9]+$ ]] && [ "$input_port" -ge 1024 ] && [ "$input_port" -le 65535 ]; then
+            port="$input_port"
+        else
+            printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: $port${NC}"
+        fi
+    fi
+
+    # 用户名
+    local username="${cur_username:-admin}"
+    printf '%b' "${BLUE}登录用户名 [默认: $username]: ${NC}"
+    read -r input_username
+    if [ -n "$input_username" ]; then
+        if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
+            username="$input_username"
+        else
+            printf '%b\n' "${YELLOW}⚠️  用户名无效，使用默认值: $username${NC}"
+        fi
+    fi
+
+    # 密码（必填，循环直到输入非空）
+    local password=""
+    while [ -z "$password" ]; do
+        printf '%b' "${BLUE}登录密码 (建议8位以上，含字母、数字和特殊符号，必填): ${NC}"
+        read -r -s input_password
+        printf '\n'
+        if [ -z "$input_password" ]; then
+            printf '%b\n' "${RED}❌ 密码不能为空${NC}"
+        else
+            password="$input_password"
+        fi
+    done
+
+    # WebBasePath（可选，随机生成默认值）
+    local rand_path
+    rand_path=$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 7)
+    local default_web_base_path="/${rand_path}"
+    local web_base_path="${cur_web_base_path:-}"
+    printf '%b\n' "${BLUE}面板 WebBasePath（可选）:${NC}"
+    printf '%b\n' "   回车使用默认值 ${BOLD}${default_web_base_path}${NC}，输入自定义路径，或输入 ${BOLD}skip${NC} 跳过不设置"
+    printf '%b' "   > "
+    read -r input_web_base_path
+    if [ -z "$input_web_base_path" ]; then
+        web_base_path="$default_web_base_path"
+    elif [ "$input_web_base_path" = "skip" ]; then
+        web_base_path=""
+    else
+        web_base_path="$input_web_base_path"
+    fi
+
+    # 保存到 .env
+    _save_env "$env_file" "$port" "$username" "$password" "$web_base_path"
+    printf '%b\n' ""
+}
+
 # ─────────────────────────────────────────────
 # 核心命令
 # ─────────────────────────────────────────────
 
 # 启动服务
+# 用法：start [端口] [用户名] [密码]
+# 端口优先级：命令行参数 > .env 中 XUI_PORT > DEFAULT_PORT
+# 凭据优先级：命令行参数 > .env > 交互式引导（.env 不存在或密码为空时）
 start() {
-    local port=${1:-$DEFAULT_PORT}
+    local port="${1:-}"
+    local arg_username="${2:-}"
+    local arg_password="${3:-}"
+
+    # 命令行传入凭据时，直接保存到 .env，跳过交互式引导
+    if [ -n "$arg_username" ] && [ -n "$arg_password" ]; then
+        local cur_web_base_path
+        cur_web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
+        _save_env "$SCRIPT_DIR/.env" "${port:-$DEFAULT_PORT}" "$arg_username" "$arg_password" "$cur_web_base_path"
+    else
+        # 确保 .env 存在且密码已设置，否则交互式引导
+        _init_env
+    fi
+
+    # 解析端口：命令行参数 > .env > DEFAULT_PORT
+    if [ -z "$port" ]; then
+        port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
+    fi
     validate_port "$port" || return 1
+
+    # 读取凭据和 WebBasePath（此时 .env 必然已存在且有效）
+    local username password web_base_path
+    username=$(read_env "XUI_USERNAME" "admin")
+    password=$(read_env "XUI_PASSWORD" "")
+    web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
 
     printf '%b\n' "${CYAN}🚀 启动 3x-ui，面板端口: ${BOLD}$port${NC}"
     docker_compose down && docker_compose up -d || { printf '%b\n' "${RED}❌ 容器启动失败${NC}"; return 1; }
 
-    printf '%b\n' "${YELLOW}⏳ 等待服务就绪...${NC}"
-    sleep 5
+    # 轮询等待容器就绪（最多 30 秒）
+    printf '%b' "${YELLOW}⏳ 等待服务就绪"
+    local waited=0
+    while ! is_running; do
+        if [ "$waited" -ge 30 ]; then
+            printf '\n'
+            printf '%b\n' "${RED}❌ 容器启动超时，请检查日志：$0 logs${NC}"
+            return 1
+        fi
+        printf '%b' "."
+        sleep 1
+        waited=$((waited + 1))
+    done
+    printf '\n'
 
+    # 设置端口
     cli setting -port "$port" \
         || { printf '%b\n' "${RED}❌ 端口设置失败${NC}"; return 1; }
+
+    # 设置凭据
+    printf '%b\n' "${CYAN}🔑 应用登录凭据 (用户名: $username)...${NC}"
+    cli setting -username "$username" -password "$password" \
+        || printf '%b\n' "${YELLOW}⚠️  凭据设置失败，请手动执行：$0 creds${NC}"
+
+    # 设置 WebBasePath（可选）
+    if [ -n "$web_base_path" ]; then
+        printf '%b\n' "${CYAN}🔧 设置 WebBasePath: $web_base_path${NC}"
+        cli setting -webBasePath "$web_base_path" \
+            || printf '%b\n' "${YELLOW}⚠️  WebBasePath 设置失败，请手动执行：$0 web-path${NC}"
+    fi
+
     docker restart "$CONTAINER"
-    sleep 3
 
-    local ip
-    ip=$(get_ip)
-    printf '%b\n' "${GREEN}✅ 启动完成: ${BOLD}http://$ip:$port/panel${NC}"
+    # 轮询等待重启完成（最多 20 秒）
+    printf '%b' "${YELLOW}⏳ 等待重启完成"
+    waited=0
+    while ! is_running; do
+        if [ "$waited" -ge 20 ]; then
+            printf '\n'
+            printf '%b\n' "${RED}❌ 容器重启超时，请检查日志：$0 logs${NC}"
+            return 1
+        fi
+        printf '%b' "."
+        sleep 1
+        waited=$((waited + 1))
+    done
+    printf '\n'
+
+    printf '%b\n' "${GREEN}✅ 启动完成${NC}"
+    printf '%b\n' ""
+    show_config
+    printf '%b\n' ""
+    printf '%b\n' "${BOLD}登录信息:${NC}"
+    printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
+    printf '%b\n' "   ${BLUE}🔑 密码:${NC}   $password"
 }
-
 # 停止服务
 stop() {
     printf '%b\n' "${CYAN}🛑 停止 3x-ui...${NC}"
     docker_compose down && printf '%b\n' "${GREEN}✅ 已停止${NC}"
 }
 
-# 重启服务 (保留当前端口)
+# 重启服务（保留当前端口，重新应用 .env 凭据）
+# 用法：restart [端口] [用户名] [密码]
 restart() {
-    local port=${1:-$(get_port)}
-    [ -z "$port" ] && port=$DEFAULT_PORT
-    start "$port"
+    local port="${1:-$(get_port)}"
+    [ -z "$port" ] && port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
+    start "$port" "${2:-}" "${3:-}"
 }
 
 # 查看运行状态
@@ -171,7 +332,10 @@ status() {
 }
 
 # 查看或修改面板端口
-set_port() {
+# 用法：
+#   port          — 查看当前端口
+#   port <端口>   — 修改端口并立即生效
+port_cmd() {
     if [ -z "$1" ]; then
         local current
         current=$(get_port)
@@ -189,142 +353,181 @@ set_port() {
     printf '%b\n' "${GREEN}✅ 端口已更新为: ${BOLD}$1${NC}"
 }
 
-# 重置端口为默认值
-reset_port() {
-    printf '%b\n' "${CYAN}🔄 重置端口为默认值: ${BOLD}$DEFAULT_PORT${NC}"
-    set_port "$DEFAULT_PORT"
-}
-
-# 从 .env 文件读取用户名和密码并重置面板登录凭据
-# 支持交互式修改并保存到 .env 文件
-reset_credentials() {
-    local env_file
-    env_file="$SCRIPT_DIR/.env"  # .env 属于脚本配置，保留在脚本目录
-
-    # 如果 .env 文件不存在，创建默认文件
-    if [ ! -f "$env_file" ]; then
-        printf '%b\n' "${YELLOW}⚠️  未找到 .env 文件，创建默认配置...${NC}"
-        cat > "$env_file" << EOF
-# 3x-ui 登录凭据配置
-# 修改后执行 reset-creds 命令生效
-
-# 面板登录用户名
-XUI_USERNAME=admin
-
-# 面板登录密码（建议修改为强密码）
-XUI_PASSWORD=admin123
-EOF
-        printf '%b\n' "${GREEN}✅ 已创建默认 .env 配置文件：$env_file${NC}"
+# 查看或修改面板 WebBasePath
+# 用法：
+#   web-path              — 查看当前 WebBasePath
+#   web-path <路径>       — 修改 WebBasePath 并立即生效
+#   web-path ""           — 清除 WebBasePath
+web_path_cmd() {
+    if [ "$#" -eq 0 ]; then
+        local current
+        current=$(read_env "XUI_WEB_BASE_PATH" "")
+        if [ -n "$current" ]; then
+            printf '%b\n' "${BLUE}🔗 当前 WebBasePath: ${BOLD}$current${NC}"
+        else
+            printf '%b\n' "${BLUE}🔗 当前 WebBasePath: ${BOLD}（未设置）${NC}"
+        fi
+        return 0
     fi
 
-    # 读取当前凭据
-    local current_username current_password
-    current_username=$(grep -E '^XUI_USERNAME=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
-    current_password=$(grep -E '^XUI_PASSWORD=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+    local new_path="$1"
+    is_running || { printf '%b\n' "${RED}❌ 容器未运行，请先执行 start${NC}"; return 1; }
 
-    [ -n "$current_username" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_USERNAME${NC}"; return 1; }
-    [ -n "$current_password" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_PASSWORD${NC}"; return 1; }
+    if [ -n "$new_path" ]; then
+        printf '%b\n' "${CYAN}🔧 设置 WebBasePath 为: $new_path${NC}"
+        cli setting -webBasePath "$new_path" \
+            || { printf '%b\n' "${RED}❌ WebBasePath 设置失败${NC}"; return 1; }
+    else
+        printf '%b\n' "${CYAN}🔧 清除 WebBasePath...${NC}"
+        cli setting -webBasePath "" \
+            || { printf '%b\n' "${RED}❌ WebBasePath 清除失败${NC}"; return 1; }
+    fi
 
-    printf '%b\n' "${CYAN}🔧 当前登录凭据配置${NC}"
-    printf '%b\n' "   ${BLUE}👤 用户名:${NC} $current_username"
-    printf '%b\n' "   ${BLUE}🔑 密码:${NC} ${current_password:0:3}****${current_password: -3}"
-    printf '%b\n' ""
-
-    # 询问是否修改凭据
-    printf '%b\n' "${BLUE}是否修改登录凭据？${NC}"
-    printf '%b\n' "   ${GREEN}1${NC}) 使用当前凭据（直接重置）"
-    printf '%b\n' "   ${GREEN}2${NC}) 修改用户名和密码"
-    printf '%b\n' "   ${GREEN}3${NC}) 仅修改密码"
-    printf '%b\n' "   ${RED}0${NC}) 取消操作"
-    printf '%b\n' ""
-
-    local choice
-    printf '%b\n' "${BLUE}请选择操作 [1-3, 0取消]:${NC}"
-    read -r choice
-
-    local username="$current_username"
-    local password="$current_password"
-
-    case "$choice" in
-        1)
-            # 使用当前凭据
-            printf '%b\n' "${CYAN}✅ 使用当前凭据进行重置...${NC}"
-            ;;
-        2)
-            # 修改用户名和密码
-            printf '%b\n' "${CYAN}🔧 修改用户名和密码${NC}"
-            
-            # 交互式输入新用户名
-            printf '%b\n' "${BLUE}请输入新的用户名 [当前: $current_username]:${NC}"
-            read -r input_username
-            if [ -n "$input_username" ]; then
-                if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
-                    username="$input_username"
-                else
-                    printf '%b\n' "${YELLOW}⚠️  用户名无效（仅允许字母、数字、下划线、减号，长度≥3），使用原用户名${NC}"
-                fi
-            fi
-            
-            # 交互式输入新密码
-            printf '%b\n' "${BLUE}请输入新的密码 [当前: ****]:${NC}"
-            read -r -s input_password
-            printf '%b\n' ""
-            if [ -n "$input_password" ]; then
-                if [ ${#input_password} -ge 6 ]; then
-                    password="$input_password"
-                else
-                    printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用原密码${NC}"
-                fi
-            fi
-            
-            # 更新 .env 文件
-            update_env_file "$env_file" "$username" "$password"
-            ;;
-        3)
-            # 仅修改密码
-            printf '%b\n' "${CYAN}🔧 仅修改密码${NC}"
-            
-            printf '%b\n' "${BLUE}请输入新的密码 [当前: ****]:${NC}"
-            read -r -s input_password
-            printf '%b\n' ""
-            if [ -n "$input_password" ]; then
-                if [ ${#input_password} -ge 6 ]; then
-                    password="$input_password"
-                    # 更新 .env 文件
-                    update_env_file "$env_file" "$username" "$password"
-                else
-                    printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用原密码${NC}"
-                fi
-            fi
-            ;;
-        0|*)
-            printf '%b\n' "${YELLOW}❌ 操作已取消${NC}"
-            return 0
-            ;;
-    esac
-
-    # 重置凭据
-    printf '%b\n' "${CYAN}🔑 重置登录凭据 (用户名: $username)...${NC}"
-    cli setting -username "$username" -password "$password" \
-        || { printf '%b\n' "${RED}❌ 凭据重置失败${NC}"; return 1; }
+    # 同步保存到 .env
+    local env_file="$SCRIPT_DIR/.env"
+    local port username password
+    port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
+    username=$(read_env "XUI_USERNAME" "admin")
+    password=$(read_env "XUI_PASSWORD" "")
+    _save_env "$env_file" "$port" "$username" "$password" "$new_path"
 
     docker restart "$CONTAINER"
-    printf '%b\n' "${GREEN}✅ 登录凭据已更新，请使用新用户名和密码登录${NC}"
+    if [ -n "$new_path" ]; then
+        printf '%b\n' "${GREEN}✅ WebBasePath 已更新为: ${BOLD}$new_path${NC}"
+    else
+        printf '%b\n' "${GREEN}✅ WebBasePath 已清除${NC}"
+    fi
 }
 
-# 更新 .env 文件中的凭据配置
-update_env_file() {
+# 管理登录凭据
+# 用法：
+#   creds                    — 交互式修改用户名和密码（保存到 .env）
+#   creds <用户名> <密码>    — 直接设置（非交互式，适合脚本调用）
+creds_cmd() {
+    local env_file="$SCRIPT_DIR/.env"
+
+    # ── 非交互式：直接传参设置 ──────────────────
+    if [ -n "$1" ]; then
+        local username="$1"
+        local password="${2:-}"
+
+        [ -z "$password" ] && { printf '%b\n' "${RED}❌ 用法: creds <用户名> <密码>${NC}"; return 1; }
+
+        if ! [[ "$username" =~ ^[a-zA-Z0-9_-]+$ ]] || [ ${#username} -lt 3 ]; then
+            printf '%b\n' "${RED}❌ 用户名无效（仅允许字母、数字、下划线、减号，长度≥3）${NC}"
+            return 1
+        fi
+        if [ -z "$password" ]; then
+            printf '%b\n' "${RED}❌ 密码不能为空${NC}"
+            return 1
+        fi
+
+        printf '%b\n' "${CYAN}🔑 设置登录凭据 (用户名: $username)...${NC}"
+        cli setting -username "$username" -password "$password" \
+            || { printf '%b\n' "${RED}❌ 凭据设置失败${NC}"; return 1; }
+        docker restart "$CONTAINER"
+
+        # 同步保存到 .env（保留端口和 WebBasePath）
+        local port web_base_path
+        port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
+        web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
+        _save_env "$env_file" "$port" "$username" "$password" "$web_base_path"
+        printf '%b\n' "${GREEN}✅ 登录凭据已设置${NC}"
+        return 0
+    fi
+
+    # ── 交互式修改 ──────────────────────────────
+    # 初始化 .env（不存在时创建）
+    if [ ! -f "$env_file" ]; then
+        printf '%b\n' "${YELLOW}⚠️  未找到 .env 文件，创建默认配置...${NC}"
+        _save_env "$env_file" "$DEFAULT_PORT" "admin" "admin123" ""
+    fi
+
+    local current_username current_password
+    current_username=$(read_env "XUI_USERNAME" "admin")
+    current_password=$(read_env "XUI_PASSWORD" "admin123")
+
+    printf '%b\n' "${CYAN}🔧 修改登录凭据${NC}"
+    printf '%b\n' "   ${BLUE}👤 当前用户名:${NC} $current_username"
+    printf '%b\n' "   ${BLUE}🔑 当前密码:${NC}   ${current_password:0:2}****"
+    printf '%b\n' ""
+
+    # 输入新用户名
+    local username="$current_username"
+    printf '%b' "${BLUE}新用户名 [回车保留 $current_username]: ${NC}"
+    read -r input_username
+    if [ -n "$input_username" ]; then
+        if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
+            username="$input_username"
+        else
+            printf '%b\n' "${YELLOW}⚠️  用户名无效，保留原值${NC}"
+        fi
+    fi
+
+    # 输入新密码
+    local password="$current_password"
+    printf '%b' "${BLUE}新密码 (建议8位以上，含字母、数字和特殊符号) [回车保留原密码]: ${NC}"
+    read -r -s input_password
+    printf '\n'
+    if [ -n "$input_password" ]; then
+        password="$input_password"
+    fi
+
+    # 无变化时直接退出
+    if [ "$username" = "$current_username" ] && [ "$password" = "$current_password" ]; then
+        printf '%b\n' "${YELLOW}ℹ️  凭据未变更${NC}"
+        return 0
+    fi
+
+    printf '%b\n' "${CYAN}🔑 应用新凭据 (用户名: $username)...${NC}"
+    cli setting -username "$username" -password "$password" \
+        || { printf '%b\n' "${RED}❌ 凭据设置失败${NC}"; return 1; }
+    docker restart "$CONTAINER"
+
+    # 保留端口和 WebBasePath
+    local port web_base_path
+    port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
+    web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
+    _save_env "$env_file" "$port" "$username" "$password" "$web_base_path"
+    printf '%b\n' "${GREEN}✅ 登录凭据已更新${NC}"
+}
+
+# 保存所有配置到 .env 文件（内部函数）
+# 用法：_save_env <env_file> <port> <username> <password> <web_base_path>
+_save_env() {
     local env_file="$1"
-    local username="$2"
-    local password="$3"
-    
+    local port="$2"
+    local username="$3"
+    local password="$4"
+    local web_base_path="$5"
+
     # 备份原文件
-    cp "$env_file" "$env_file.bak" 2>/dev/null
-    
-    # 更新文件内容
-    cat > "$env_file" << EOF
-# 3x-ui 登录凭据配置
-# 修改后执行 reset-creds 命令生效
+    [ -f "$env_file" ] && cp "$env_file" "${env_file}.bak" 2>/dev/null
+
+    if [ -n "$web_base_path" ]; then
+        cat > "$env_file" << EOF
+# 3x-ui 配置
+# 修改后执行 restart 命令生效
+
+# 面板端口
+XUI_PORT=$port
+
+# 面板登录用户名
+XUI_USERNAME=$username
+
+# 面板登录密码（建议修改为强密码）
+XUI_PASSWORD=$password
+
+# 面板 WebBasePath（可选，留空则不启用）
+XUI_WEB_BASE_PATH=$web_base_path
+EOF
+    else
+        cat > "$env_file" << EOF
+# 3x-ui 配置
+# 修改后执行 restart 命令生效
+
+# 面板端口
+XUI_PORT=$port
 
 # 面板登录用户名
 XUI_USERNAME=$username
@@ -332,8 +535,8 @@ XUI_USERNAME=$username
 # 面板登录密码（建议修改为强密码）
 XUI_PASSWORD=$password
 EOF
-    
-    printf '%b\n' "${GREEN}✅ 凭据配置已保存到 .env 文件${NC}"
+    fi
+    printf '%b\n' "${GREEN}✅ 配置已保存到 .env${NC}"
 }
 
 # 拉取最新镜像并重启
@@ -343,7 +546,7 @@ update() {
 
     local port
     port=$(get_port)
-    [ -z "$port" ] && port=$DEFAULT_PORT
+    [ -z "$port" ] && port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
 
     printf '%b\n' "${CYAN}🔄 重启服务 (端口: $port)...${NC}"
     start "$port"
@@ -370,6 +573,13 @@ logs() {
     docker logs --tail 100 -f "$CONTAINER"
 }
 
+# 显示当前面板配置（端口、用户名、WebBasePath 等）
+show_config() {
+    is_running || { printf '%b\n' "${RED}❌ 容器未运行，请先执行 start${NC}"; return 1; }
+    printf '%b\n' "${CYAN}📋 当前面板配置:${NC}"
+    cli setting -show true
+}
+
 # 显示公网 IP
 show_ip() {
     printf '%b\n' "${BLUE}🌐 公网 IP: ${BOLD}$(get_ip)${NC}"
@@ -379,38 +589,44 @@ show_ip() {
 show_help() {
     printf '%b\n' "${BOLD}用法: $0 <命令> [参数]${NC}"
     printf '\n'
-    printf '%b\n' "${BOLD}命令列表:${NC}"
-    # 命令名手动补空格对齐 (目标显示宽度 16，中文字符显示宽度 2 但占 3 字节)
-    printf "  ${GREEN}%s${NC} %s\n" "start [端口]   " "启动服务 (默认端口 $DEFAULT_PORT)"
-    printf "  ${GREEN}%s${NC} %s\n" "stop           " "停止服务"
-    printf "  ${GREEN}%s${NC} %s\n" "restart [端口] " "重启服务 (默认保留当前端口)"
-    printf "  ${GREEN}%s${NC} %s\n" "status         " "查看运行状态"
-    printf "  ${GREEN}%s${NC} %s\n" "port [端口]    " "查看或修改面板端口"
-    printf "  ${GREEN}%s${NC} %s\n" "reset-port     " "重置端口为默认值 ($DEFAULT_PORT)"
-    printf "  ${GREEN}%s${NC} %s\n" "reset-creds    " "从 .env 读取用户名/密码并重置登录凭据"
-    printf "  ${GREEN}%s${NC} %s\n" "update         " "拉取最新镜像并重启"
-    printf "  ${GREEN}%s${NC} %s\n" "cli [命令]     " "在容器内执行 x-ui 命令 (无参数显示 x-ui 帮助)"
-    printf "  ${GREEN}%s${NC} %s\n" "shell          " "进入容器交互式终端"
-    printf "  ${GREEN}%s${NC} %s\n" "logs           " "查看容器日志 (实时)"
-    printf "  ${GREEN}%s${NC} %s\n" "ip             " "显示公网 IP"
-    printf "  ${GREEN}%s${NC} %s\n" "help           " "显示此帮助信息"
+    printf '%b\n' "${BOLD}服务管理:${NC}"
+    printf "  ${GREEN}start [端口] [用户名] [密码]${NC}     启动服务\n"
+    printf "  ${GREEN}stop${NC}                              停止服务\n"
+    printf "  ${GREEN}restart [端口] [用户名] [密码]${NC}   重启服务\n"
+    printf "  ${GREEN}status${NC}                            查看运行状态\n"
+    printf "  ${GREEN}update${NC}                            拉取最新镜像并重启\n"
+    printf '\n'
+    printf '%b\n' "${BOLD}配置管理:${NC}"
+    printf "  ${GREEN}port [端口]${NC}                      查看或修改面板端口（有参数则修改并立即生效）\n"
+    printf "  ${GREEN}creds [用户名 密码]${NC}              管理登录凭据（无参数交互式，有参数直接设置）\n"
+    printf "  ${GREEN}web-path [路径]${NC}                  查看或修改 WebBasePath（传空字符串则清除）\n"
+    printf '\n'
+    printf '%b\n' "${BOLD}调试工具:${NC}"
+    printf "  ${GREEN}config${NC}                           查看当前面板配置\n"
+    printf "  ${GREEN}logs${NC}                             查看容器日志（实时）\n"
+    printf "  ${GREEN}shell${NC}                            进入容器交互式终端\n"
+    printf "  ${GREEN}cli [命令]${NC}                       在容器内执行 x-ui 命令（无参数显示帮助）\n"
+    printf "  ${GREEN}ip${NC}                               显示公网 IP\n"
+    printf "  ${GREEN}help${NC}                             显示此帮助信息\n"
 }
 
 # ─────────────────────────────────────────────
 # 入口分发
 # ─────────────────────────────────────────────
 case "${1:-help}" in
-    start)      start "$2"      ;;
-    stop)       stop            ;;
-    restart)    restart "$2"    ;;
-    status)     status          ;;
-    port)       set_port "$2"   ;;
-    reset-port)  reset_port        ;;
-    reset-creds) reset_credentials ;;
-    update)     update          ;;
-    cli)        run_cli "${@:2}"  ;;
-    shell)      shell           ;;
-    logs)       logs            ;;
-    ip)         show_ip         ;;
-    help|*)     show_help       ;;
+    start)   start "$2" "$3" "$4"    ;;
+    stop)    stop                     ;;
+    restart) restart "$2" "$3" "$4"  ;;
+    status)  status                   ;;
+    update)  update                   ;;
+    port)     port_cmd "$2"            ;;
+    creds)    creds_cmd "$2" "$3"     ;;
+    web-path) web_path_cmd "${2-}"    ;;
+    # 调试工具
+    config)  show_config               ;;
+    logs)    logs                     ;;
+    shell)   shell                    ;;
+    cli)     run_cli "${@:2}"         ;;
+    ip)      show_ip                  ;;
+    help|*)  show_help                ;;
 esac

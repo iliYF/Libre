@@ -395,8 +395,14 @@ health_check() {
     fi
 }
 
-# 生成自签名证书
 # 从指定目录导入证书文件（替换 cert.pem / key.pem，替换前备份）
+#
+# 查找策略：
+#   1. 精确文件名匹配：cert.pem / key.pem，匹配到直接使用
+#   2. 未匹配时扫描目录下所有 .pem / .key 后缀文件，用 openssl 读取 PEM 头识别类型：
+#      - 包含 CERTIFICATE → 证书候选
+#      - 包含 PRIVATE KEY  → 私钥候选
+#      候选唯一时自动使用，多个时列出让用户选择
 cert_update() {
     local src_dir="${1:-}"
 
@@ -419,16 +425,84 @@ cert_update() {
         return 1
     fi
 
-    local src_cert="$src_dir/cert.pem"
-    local src_key="$src_dir/key.pem"
+    local src_cert="" src_key=""
 
-    if [ ! -f "$src_cert" ]; then
-        printf '%b\n' "${RED}❌ 未找到证书文件：$src_cert${NC}"
-        return 1
-    fi
-    if [ ! -f "$src_key" ]; then
-        printf '%b\n' "${RED}❌ 未找到私钥文件：$src_key${NC}"
-        return 1
+    # ── 第一步：精确文件名匹配 ──────────────────
+    [ -f "$src_dir/cert.pem" ] && src_cert="$src_dir/cert.pem"
+    [ -f "$src_dir/key.pem"  ] && src_key="$src_dir/key.pem"
+
+    # ── 第二步：后缀扫描 + 内容识别（仅在精确匹配缺失时触发）──
+    if [ -z "$src_cert" ] || [ -z "$src_key" ]; then
+        if ! command -v openssl &>/dev/null; then
+            printf '%b\n' "${RED}❌ 未安装 openssl，无法识别证书类型${NC}"
+            return 1
+        fi
+
+        local cert_candidates=() key_candidates=()
+        while IFS= read -r -d '' f; do
+            local header
+            header=$(head -1 "$f" 2>/dev/null)
+            case "$header" in
+                *CERTIFICATE*)
+                    cert_candidates+=("$f")
+                    ;;
+                *PRIVATE\ KEY*)
+                    key_candidates+=("$f")
+                    ;;
+            esac
+        done < <(find "$src_dir" -maxdepth 1 \( -name "*.pem" -o -name "*.key" \) -type f -print0 2>/dev/null)
+
+        # 证书候选处理
+        if [ -z "$src_cert" ]; then
+            if [ "${#cert_candidates[@]}" -eq 0 ]; then
+                printf '%b\n' "${RED}❌ 未找到证书文件（目录下无包含 CERTIFICATE 的 .pem/.key 文件）${NC}"
+                return 1
+            elif [ "${#cert_candidates[@]}" -eq 1 ]; then
+                src_cert="${cert_candidates[0]}"
+                printf '%b\n' "${CYAN}🔍 证书文件：$(basename "$src_cert")${NC}"
+            else
+                printf '%b\n' "${CYAN}🔍 找到多个证书文件，请选择：${NC}"
+                local i=1
+                for f in "${cert_candidates[@]}"; do
+                    printf "  ${GREEN}%d)${NC} %s\n" "$i" "$(basename "$f")"
+                    i=$((i + 1))
+                done
+                printf '%b' "  请输入序号 [1-${#cert_candidates[@]}]： "
+                read -r _idx
+                if [[ "$_idx" =~ ^[0-9]+$ ]] && [ "$_idx" -ge 1 ] && [ "$_idx" -le "${#cert_candidates[@]}" ]; then
+                    src_cert="${cert_candidates[$((_idx - 1))]}"
+                else
+                    printf '%b\n' "${RED}❌ 无效选择${NC}"
+                    return 1
+                fi
+            fi
+        fi
+
+        # 私钥候选处理
+        if [ -z "$src_key" ]; then
+            if [ "${#key_candidates[@]}" -eq 0 ]; then
+                printf '%b\n' "${RED}❌ 未找到私钥文件（目录下无包含 PRIVATE KEY 的 .pem/.key 文件）${NC}"
+                return 1
+            elif [ "${#key_candidates[@]}" -eq 1 ]; then
+                src_key="${key_candidates[0]}"
+                printf '%b\n' "${CYAN}🔍 私钥文件：$(basename "$src_key")${NC}"
+            else
+                printf '%b\n' "${CYAN}🔍 找到多个私钥文件，请选择：${NC}"
+                local i=1
+                for f in "${key_candidates[@]}"; do
+                    printf "  ${GREEN}%d)${NC} %s\n" "$i" "$(basename "$f")"
+                    i=$((i + 1))
+                done
+                printf '%b' "  请输入序号 [1-${#key_candidates[@]}]： "
+                read -r _idx
+                if [[ "$_idx" =~ ^[0-9]+$ ]] && [ "$_idx" -ge 1 ] && [ "$_idx" -le "${#key_candidates[@]}" ]; then
+                    src_key="${key_candidates[$((_idx - 1))]}"
+                else
+                    printf '%b\n' "${RED}❌ 无效选择${NC}"
+                    return 1
+                fi
+            fi
+        fi
     fi
 
     local dest_dir="$DATA_DIR/config"

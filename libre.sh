@@ -33,6 +33,9 @@
 # ─────────────────────────────────────────────
 # 常量
 # ─────────────────────────────────────────────
+# 脚本安装目录（与 install.sh 保持一致）
+INSTALL_DIR="${LIBRE_DIR:-/opt/libre}"
+
 # 追踪软链接，解析脚本真实所在目录（兼容 Linux / macOS）
 _resolve_script_dir() {
     local src="$0"
@@ -113,6 +116,57 @@ parse_service() {
     esac
 }
 
+# 执行 clean：删除指定服务的脚本目录和/或数据目录
+do_clean() {
+    local svc="$1"
+    local services=()
+    case "$svc" in
+        lantern) services=("lantern") ;;
+        xray)    services=("xray") ;;
+        all)     services=("lantern" "xray") ;;
+    esac
+
+    # 列出将要删除的目录
+    printf '%b\n' "${BOLD}将清理以下目录（.env 配置文件保留）：${NC}"
+    for name in "${services[@]}"; do
+        local script_dir="$INSTALL_DIR/$name"
+        local data_dir="$LIBRE_APP_DIR/$name"
+        printf "  ${CYAN}%-10s${NC} 脚本目录：%s\n" "[$name]" "$script_dir"
+        printf "  ${CYAN}%-10s${NC} 数据目录：%s\n" "" "$data_dir"
+    done
+    printf '\n'
+
+    printf '%b' "${RED}确认清理？[y/N]：${NC} "
+    read -r _confirm
+    case "$_confirm" in
+        y|Y) ;;
+        *)
+            printf '%b\n' "${YELLOW}❌ 操作已取消${NC}"
+            return 0
+            ;;
+    esac
+
+    for name in "${services[@]}"; do
+        local script_dir="$INSTALL_DIR/$name"
+        local data_dir="$LIBRE_APP_DIR/$name"
+
+        if [ -d "$script_dir" ]; then
+            rm -rf "$script_dir"
+            printf '%b\n' "${GREEN}✅ 已删除脚本目录：$script_dir${NC}"
+        else
+            printf '%b\n' "${YELLOW}   脚本目录不存在：$script_dir${NC}"
+        fi
+
+        if [ -d "$data_dir" ]; then
+            # 删除数据目录下所有内容，但保留 .env 文件
+            find "$data_dir" -mindepth 1 -not -name '.env' -delete 2>/dev/null
+            printf '%b\n' "${GREEN}✅ 已清理数据目录（.env 已保留）：$data_dir${NC}"
+        else
+            printf '%b\n' "${YELLOW}   数据目录不存在：$data_dir${NC}"
+        fi
+    done
+}
+
 # 列出指定服务的容器信息（用于删除前确认）
 print_container_info() {
     local svc="$1"
@@ -190,6 +244,7 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "install   [服务]" "安装并首次启动服务（默认 all）"
     printf "  ${GREEN}%s${NC} %s\n" "remove    [服务]" "停止并删除容器（默认 all）"
     printf "  ${GREEN}%s${NC} %s\n" "reinstall [服务]" "删除容器后重新安装（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "clean     [服务]" "删除脚本目录和数据目录（默认 all）"
     printf '\n'
     printf '%b\n' "${BOLD}Lantern 子命令:${NC}"
     printf "  ${GREEN}%s${NC} %s\n" "lantern <子命令>  " "执行 Lantern 专属操作"
@@ -200,8 +255,8 @@ show_help() {
     printf '%b\n' "${BOLD}Xray 子命令:${NC}"
     printf "  ${GREEN}%s${NC} %s\n" "xray <子命令>     " "执行 Xray 专属操作"
     printf "  ${BLUE}%s${NC} %s\n" "  port [端口]     " "查看或修改面板端口"
-    printf "  ${BLUE}%s${NC} %s\n" "  reset-port      " "重置端口为默认值"
-    printf "  ${BLUE}%s${NC} %s\n" "  reset-creds     " "交互式重置登录凭据（保存到 .env）"
+    printf "  ${BLUE}%s${NC} %s\n" "  creds           " "交互式修改用户名和密码"
+    printf "  ${BLUE}%s${NC} %s\n" "  creds <用户名> <密码>" "直接设置登录凭据"
     printf "  ${BLUE}%s${NC} %s\n" "  cli [命令]      " "在容器内执行 x-ui 命令"
     printf "  ${BLUE}%s${NC} %s\n" "  help            " "查看所有 Xray 子命令"
     printf '\n'
@@ -363,7 +418,7 @@ case "$CMD" in
         parse_service "$SVC" > /dev/null
         shift || true
         printf '%b\n' "${YELLOW}⚠️  即将删除容器并重新安装：${BOLD}$SVC${NC}"
-        printf '%b\n' "${YELLOW}   容器将被移除后重新创建（数据目录保留）${NC}"
+        printf '%b\n' "${YELLOW}   容器将被移除后重新创建${NC}"
         printf '\n'
         print_container_info "$SVC"
         printf '%b' "${RED}确认重新安装？[y/N]：${NC} "
@@ -377,7 +432,28 @@ case "$CMD" in
         esac
         dispatch "stop" "$SVC"
         printf '\n'
+        # 询问是否同时清理目录
+        printf '%b' "${YELLOW}是否同时清理脚本目录和数据目录？[y/N]：${NC} "
+        read -r _clean_confirm
+        case "$_clean_confirm" in
+            y|Y)
+                printf '\n'
+                do_clean "$SVC"
+                printf '\n'
+                ;;
+        esac
         bash "$SCRIPT_DIR/install.sh" "$SVC"
+        ;;
+
+    # ── clean：删除脚本目录和数据目录 ──────────
+    clean)
+        SVC=$(parse_service "${1:-all}")
+        shift || true
+        printf '%b\n' "${YELLOW}⚠️  即将删除 ${BOLD}$SVC${NC}${YELLOW} 的脚本目录和数据目录${NC}"
+        printf '%b\n' "${YELLOW}   脚本目录：$INSTALL_DIR/$SVC${NC}"
+        printf '%b\n' "${YELLOW}   数据目录：$LIBRE_APP_DIR/$SVC${NC}"
+        printf '\n'
+        do_clean "$SVC"
         ;;
 
     # ── 公共命令：支持 lantern / xray / all ────

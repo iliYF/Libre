@@ -2,8 +2,9 @@
 # Libre 一键安装脚本
 #
 # 支持安装：
-#   1) Lantern Server Manager — WireGuard VPN 管理面板
-#   2) Xray (3x-ui)           — 多协议代理管理面板
+#   1) Lantern — 私有 Lantern 服务器管理工具，可轻松搭建VPN并与好友共享访问
+#   2) Xray    — 3X-UI，基于 Xray-core 的开源 Web 控制面板，
+#               支持多协议代理与 VPN，适用于单节点到多节点部署
 #   3) 全部安装
 #
 # 本地用法：
@@ -96,7 +97,7 @@ create_lantern_data_dir() {
 
 # 创建默认的 .env 文件（如果不存在）
 create_default_env() {
-    local env_file="$SCRIPT_DIR/lantern/.env"
+    local env_file="$LIBRE_APP_DIR/lantern/.env"
     
     if [ ! -f "$env_file" ]; then
         printf '%b\n' "${CYAN}🔧 配置 Lantern Server Manager 端口${NC}"
@@ -145,7 +146,7 @@ EOF
 
 # 创建 Xray 默认的 .env 文件（如果不存在）
 create_xray_default_env() {
-    local env_file="$SCRIPT_DIR/xray/.env"
+    local env_file="$LIBRE_APP_DIR/xray/.env"
     
     if [ ! -f "$env_file" ]; then
         printf '%b\n' "${CYAN}🔧 配置 3x-ui 面板${NC}"
@@ -202,7 +203,8 @@ EOF
         printf '%b\n' "${GREEN}✅ 已创建 Xray .env 配置文件：$env_file${NC}"
         printf '%b\n' "   ${BLUE}🌐 面板端口:${NC} $port"
         printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
-        printf '%b\n' "   ${BLUE}🔑 密码:${NC} ${password:0:3}****${password: -3}"
+        local masked_pwd="${password:0:2}****"
+        printf '%b\n' "   ${BLUE}🔑 密码:${NC} $masked_pwd"
     else
         printf '%b\n' "${YELLOW}⚠️  Xray .env 文件已存在：$env_file${NC}"
     fi
@@ -259,30 +261,41 @@ detect_local_mode() {
 # 远程模式：按需下载所需文件
 # ─────────────────────────────────────────────
 
-# 下载 Lantern 所需文件到 $INSTALL_DIR/lantern/
-download_lantern_files() {
-    printf '%b\n' "${CYAN}⬇️  下载 Lantern 配置文件...${NC}"
-    download_file "lantern/docker-compose.yml"              "$INSTALL_DIR/lantern/docker-compose.yml"
-    download_file "lantern/lantern.sh"                      "$INSTALL_DIR/lantern/lantern.sh"
-    download_file "lantern/scripts/gen_cert.sh"      "$INSTALL_DIR/lantern/scripts/gen_cert.sh"
-    chmod +x "$INSTALL_DIR/lantern/lantern.sh"
-    chmod +x "$INSTALL_DIR/lantern/scripts/gen_cert.sh"
-    printf '%b\n' "${GREEN}✅ Lantern 文件下载完成 → $INSTALL_DIR/lantern/${NC}"
-}
+# Libre 核心脚本（install.sh、libre.sh）
+CMD_ASSETS=(
+    "install.sh"
+    "libre.sh"
+)
 
-# 下载 Xray 所需文件到 $INSTALL_DIR/xray/
-download_xray_files() {
-    printf '%b\n' "${CYAN}⬇️  下载 Xray 配置文件...${NC}"
-    download_file "xray/docker-compose.yaml"  "$INSTALL_DIR/xray/docker-compose.yaml"
-    download_file "xray/3xui.sh"              "$INSTALL_DIR/xray/3xui.sh"
-    chmod +x "$INSTALL_DIR/xray/3xui.sh"
-    printf '%b\n' "${GREEN}✅ Xray 文件下载完成 → $INSTALL_DIR/xray/${NC}"
-}
+# Lantern 模块文件（相对于仓库根目录）
+LANTERN_ASSETS=(
+    "lantern/docker-compose.yml"
+    "lantern/lantern.sh"
+    "lantern/scripts/gen_cert.sh"
+)
 
-# 下载 libre.sh 管理脚本到安装目录
-download_libre_sh() {
-    download_file "libre.sh"  "$INSTALL_DIR/libre.sh"
-    chmod +x "$INSTALL_DIR/libre.sh"
+# Xray 模块文件（相对于仓库根目录）
+XRAY_ASSETS=(
+    "xray/docker-compose.yaml"
+    "xray/3xui.sh"
+)
+
+# 下载指定文件列表并赋予可执行权限
+# 用法：download_files <标题> <文件1> [文件2 ...]
+# 每个文件的本地路径与远程路径保持一致（相对于 $INSTALL_DIR）
+download_files() {
+    local label="$1"
+    shift
+    printf '%b\n' "${CYAN}⬇️  下载 ${label} 文件...${NC}"
+    for remote_path in "$@"; do
+        local local_path="$INSTALL_DIR/$remote_path"
+        download_file "$remote_path" "$local_path"
+        # .sh 脚本自动赋予可执行权限
+        case "$remote_path" in
+            *.sh) chmod +x "$local_path" ;;
+        esac
+    done
+    printf '%b\n' "${GREEN}✅ ${label} 文件下载完成 → $INSTALL_DIR/${NC}"
 }
 
 # ─────────────────────────────────────────────
@@ -321,12 +334,12 @@ setup_symlink() {
 
 install_lantern() {
     print_divider
-    printf '%b\n' "${CYAN}🔦 安装 Lantern Server Manager${NC}"
+    printf '%b\n' "${CYAN}🔦 安装 Lantern（私有 Lantern 服务器管理工具）${NC}"
     print_divider
 
     # 远程模式：先下载文件
     if [ "${REMOTE_MODE:-0}" = "1" ]; then
-        download_lantern_files
+download_files "Lantern" "${LANTERN_ASSETS[@]}"
     fi
 
     # 创建数据目录和默认配置文件
@@ -353,7 +366,7 @@ install_lantern() {
 
     printf '\n'
     printf '%b\n' "${GREEN}✅ Lantern 安装完成${NC}"
-    printf '%b\n' "   管理命令：${BOLD}bash $SCRIPT_DIR/lantern/lantern.sh <命令>${NC}"
+    printf '%b\n' "   直接管理：${BOLD}bash $SCRIPT_DIR/lantern/lantern.sh <命令>${NC}"
     printf '%b\n' "   统一管理：${BOLD}bash $SCRIPT_DIR/libre.sh <命令> lantern${NC}"
     printf '%b\n' "   健康探测：${BOLD}bash $SCRIPT_DIR/lantern/lantern.sh health${NC}"
 
@@ -364,12 +377,12 @@ install_lantern() {
 
 install_xray() {
     print_divider
-    printf '%b\n' "${CYAN}⚡ 安装 Xray (3x-ui)${NC}"
+    printf '%b\n' "${CYAN}⚡ 安装 Xray（3X-UI 多协议代理控制面板）${NC}"
     print_divider
 
     # 远程模式：先下载文件
     if [ "${REMOTE_MODE:-0}" = "1" ]; then
-        download_xray_files
+download_files "Xray" "${XRAY_ASSETS[@]}"
     fi
 
     # 创建数据目录和默认配置文件
@@ -384,19 +397,30 @@ install_xray() {
 
     # 从 .env 读取端口，传给 start 命令
     local xray_port=2026
-    local xray_env="$SCRIPT_DIR/xray/.env"
+    local xray_env="$LIBRE_APP_DIR/xray/.env"
     if [ -f "$xray_env" ]; then
         local env_port
         env_port=$(grep -E '^XUI_PORT=' "$xray_env" | cut -d'=' -f2- | tr -d '\r')
         [ -n "$env_port" ] && xray_port="$env_port"
     fi
 
-    printf '%b\n' "${CYAN}🚀 启动 Xray (3x-ui)，面板端口: ${BOLD}$xray_port${NC}"
-    (cd "$SCRIPT_DIR/xray" && LIBRE_DATA_DIR="$LIBRE_APP_DIR/xray" bash 3xui.sh start "$xray_port")
+    # 从 .env 读取用户名和密码
+    local xray_username="admin"
+    local xray_password="admin123"
+    if [ -f "$xray_env" ]; then
+        local env_username env_password
+        env_username=$(grep -E '^XUI_USERNAME=' "$xray_env" | cut -d'=' -f2- | tr -d '\r')
+        env_password=$(grep -E '^XUI_PASSWORD=' "$xray_env" | cut -d'=' -f2- | tr -d '\r')
+        [ -n "$env_username" ] && xray_username="$env_username"
+        [ -n "$env_password" ] && xray_password="$env_password"
+    fi
+
+    printf '%b\n' "${CYAN}🚀 启动 Xray（3X-UI）...${NC}"
+    (cd "$SCRIPT_DIR/xray" && LIBRE_DATA_DIR="$LIBRE_APP_DIR/xray" bash 3xui.sh start "$xray_port" "$xray_username" "$xray_password")
 
     printf '\n'
     printf '%b\n' "${GREEN}✅ Xray 安装完成${NC}"
-    printf '%b\n' "   管理命令：${BOLD}bash $SCRIPT_DIR/xray/3xui.sh <命令>${NC}"
+    printf '%b\n' "   直接管理：${BOLD}bash $SCRIPT_DIR/xray/3xui.sh <命令>${NC}"
     printf '%b\n' "   统一管理：${BOLD}bash $SCRIPT_DIR/libre.sh <命令> xray${NC}"
 }
 
@@ -409,8 +433,8 @@ show_menu() {
     printf '%b\n' "${BOLD}║           Libre 一键安装向导             ║${NC}"
     printf '%b\n' "${BOLD}╚══════════════════════════════════════════╝${NC}"
     printf '\n'
-    printf '%b\n' "  ${GREEN}1)${NC} 安装 Lantern Server Manager（WireGuard VPN）"
-    printf '%b\n' "  ${GREEN}2)${NC} 安装 Xray (3x-ui)（多协议代理）"
+    printf '%b\n' "  ${GREEN}1)${NC} 安装 Lantern（私有 Lantern 服务器管理工具）"
+    printf '%b\n' "  ${GREEN}2)${NC} 安装 Xray（3X-UI 多协议代理控制面板）"
     printf '%b\n' "  ${GREEN}3)${NC} 全部安装"
     printf '%b\n' "  ${RED}0)${NC} 退出"
     printf '\n'
@@ -444,9 +468,9 @@ run_install() {
     check_docker_compose
     printf '\n'
 
-    # 远程模式：提前下载 libre.sh
+    # 远程模式：提前下载根目录脚本
     if [ "${REMOTE_MODE:-0}" = "1" ]; then
-        download_libre_sh
+download_files "Libre" "${CMD_ASSETS[@]}"
     fi
 
     case "$target" in
