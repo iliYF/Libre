@@ -9,9 +9,9 @@ services:
       - NO_SYSTEMD=true
     ports:
       # Web UI / REST API 端口
-      - "${API_PORT:-18080}:18080"
+      - "${API_PORT:-18080}:${API_PORT:-18080}"
       # VPN 端口（TCP）
-      - "${VPN_PORT:-30001}:30001"
+      - "${VPN_PORT:-30001}:${VPN_PORT:-30001}"
     volumes:
       # 持久化配置目录（数据目录由 LIBRE_DATA_DIR 环境变量指定）
       - ${LIBRE_DATA_DIR:-/usr/local/app/libre/lantern}/config:/config

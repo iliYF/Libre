@@ -19,7 +19,8 @@
 #   libre shell lantern       # 进入 Lantern 容器终端（必须指定服务）
 #
 # Lantern 子命令：
-#   libre lantern gen-cert    # 生成自签名证书
+#   libre lantern cert-gen    # 生成自签名证书
+#   libre lantern cert-update /path/to/certs  # 从指定目录导入证书
 #   libre lantern help        # 查看 Lantern 所有子命令
 #
 # Xray 子命令：
@@ -192,7 +193,8 @@ show_help() {
     printf '\n'
     printf '%b\n' "${BOLD}Lantern 子命令:${NC}"
     printf "  ${GREEN}%s${NC} %s\n" "lantern <子命令>  " "执行 Lantern 专属操作"
-    printf "  ${BLUE}%s${NC} %s\n" "  gen-cert        " "生成自签名证书"
+    printf "  ${BLUE}%s${NC} %s\n" "  cert-gen        " "生成自签名证书"
+    printf "  ${BLUE}%s${NC} %s\n" "  cert-update [目录]" "从指定目录导入 cert.pem / key.pem"
     printf "  ${BLUE}%s${NC} %s\n" "  help            " "查看所有 Lantern 子命令"
     printf '\n'
     printf '%b\n' "${BOLD}Xray 子命令:${NC}"
@@ -224,11 +226,12 @@ show_lantern_help() {
     printf '%b\n' "${BOLD}用法: $me lantern <子命令> [参数]${NC}"
     printf '\n'
     printf '%b\n' "${BOLD}子命令:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert        " "生成自签名证书"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert-simple " "生成证书（简化版，使用 openssl）"
+    printf "  ${GREEN}%s${NC} %s\n" "cert-gen        " "生成自签名证书（使用 openssl）"
+    printf "  ${GREEN}%s${NC} %s\n" "cert-update [目录]" "从指定目录导入 cert.pem / key.pem（替换前自动备份）"
     printf "  ${GREEN}%s${NC} %s\n" "config-ports    " "交互式配置端口（保存到 .env）"
     printf "  ${GREEN}%s${NC} %s\n" "health          " "健康探测（检查 API /health 接口）"
-    printf "  ${GREEN}%s${NC} %s\n" "help            " "显示此帮助信息"    printf '\n'
+    printf "  ${GREEN}%s${NC} %s\n" "help            " "显示此帮助信息"
+    printf '\n'
     printf '%b\n' "${YELLOW}提示：start / stop / restart / status / update / logs / shell / ip${NC}"
     printf '%b\n' "${YELLOW}      等公共命令请使用：$me <命令> lantern${NC}"
 }
@@ -262,13 +265,13 @@ case "$CMD" in
         SUBCMD="${1:-help}"
         shift || true
         case "$SUBCMD" in
-            gen-cert)
-                print_header "Lantern — gen-cert"
-                run_lantern gen-cert
+            cert-gen)
+                print_header "Lantern — cert-gen"
+                run_lantern cert-gen
                 ;;
-            gen-cert-simple)
-                print_header "Lantern — gen-cert-simple"
-                run_lantern gen-cert-simple
+            cert-update)
+                print_header "Lantern — cert-update"
+                run_lantern cert-update "${1:-}"
                 ;;
             config-ports)
                 print_header "Lantern — config-ports"

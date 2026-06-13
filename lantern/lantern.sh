@@ -396,16 +396,79 @@ health_check() {
 }
 
 # 生成自签名证书
-gen_cert() {
-    mkdir -p "$DATA_DIR/config"
-    if [ -f "$SCRIPT_DIR/scripts/gen_cert.py" ]; then
-        LIBRE_DATA_DIR="$DATA_DIR" python3 "$SCRIPT_DIR/scripts/gen_cert.py" \
-            && printf '%b\n' "${GREEN}✅ 证书已生成到 $DATA_DIR/config/ 目录${NC}" \
-            || printf '%b\n' "${RED}❌ 证书生成失败${NC}"
-    else
-        printf '%b\n' "${RED}❌ 未找到 gen_cert.py${NC}"
+# 从指定目录导入证书文件（替换 cert.pem / key.pem，替换前备份）
+cert_update() {
+    local src_dir="${1:-}"
+
+    # 未传参时交互式输入
+    if [ -z "$src_dir" ]; then
+        printf '%b\n' "${CYAN}📂 请输入证书文件所在目录路径：${NC}"
+        read -r src_dir
+    fi
+
+    # 去除末尾斜杠
+    src_dir="${src_dir%/}"
+
+    if [ -z "$src_dir" ]; then
+        printf '%b\n' "${RED}❌ 目录路径不能为空${NC}"
         return 1
     fi
+
+    if [ ! -d "$src_dir" ]; then
+        printf '%b\n' "${RED}❌ 目录不存在：$src_dir${NC}"
+        return 1
+    fi
+
+    local src_cert="$src_dir/cert.pem"
+    local src_key="$src_dir/key.pem"
+
+    if [ ! -f "$src_cert" ]; then
+        printf '%b\n' "${RED}❌ 未找到证书文件：$src_cert${NC}"
+        return 1
+    fi
+    if [ ! -f "$src_key" ]; then
+        printf '%b\n' "${RED}❌ 未找到私钥文件：$src_key${NC}"
+        return 1
+    fi
+
+    local dest_dir="$DATA_DIR/config"
+    mkdir -p "$dest_dir"
+
+    local dest_cert="$dest_dir/cert.pem"
+    local dest_key="$dest_dir/key.pem"
+    local ts
+    ts=$(date '+%Y%m%d_%H%M%S')
+
+    # 备份已有证书
+    if [ -f "$dest_cert" ]; then
+        cp "$dest_cert" "${dest_cert}.bak.${ts}"
+        printf '%b\n' "${YELLOW}📦 已备份旧证书：${dest_cert}.bak.${ts}${NC}"
+    fi
+    if [ -f "$dest_key" ]; then
+        cp "$dest_key" "${dest_key}.bak.${ts}"
+        printf '%b\n' "${YELLOW}📦 已备份旧私钥：${dest_key}.bak.${ts}${NC}"
+    fi
+
+    # 复制新证书
+    cp "$src_cert" "$dest_cert" || { printf '%b\n' "${RED}❌ 复制 cert.pem 失败${NC}"; return 1; }
+    cp "$src_key"  "$dest_key"  || { printf '%b\n' "${RED}❌ 复制 key.pem 失败${NC}"; return 1; }
+
+    printf '%b\n' "${GREEN}✅ 证书已更新到 $dest_dir${NC}"
+    printf '%b\n' "   ${BLUE}cert.pem${NC} ← $src_cert"
+    printf '%b\n' "   ${BLUE}key.pem${NC}  ← $src_key"
+    printf '\n'
+
+    # 询问是否重启容器
+    printf '%b' "${CYAN}是否立即重启容器使证书生效？[y/N]：${NC} "
+    read -r _restart
+    case "$_restart" in
+        y|Y)
+            restart
+            ;;
+        *)
+            printf '%b\n' "${YELLOW}💡 证书已替换，请手动执行 restart 使其生效${NC}"
+            ;;
+    esac
 }
 
 # 生成自签名证书（简化版，使用 openssl）
@@ -431,8 +494,8 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "restart    " "重启服务"
     printf "  ${GREEN}%s${NC} %s\n" "status     " "查看运行状态"
     printf "  ${GREEN}%s${NC} %s\n" "update     " "拉取最新镜像并重启"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert        " "生成自签名证书到 ./config 目录"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert-simple " "生成证书（简化版，使用 openssl）"
+    printf "  ${GREEN}%s${NC} %s\n" "cert-gen        " "生成自签名证书（使用 openssl）"
+    printf "  ${GREEN}%s${NC} %s\n" "cert-update [目录]" "从指定目录导入 cert.pem / key.pem（替换前自动备份）"
     printf "  ${GREEN}%s${NC} %s\n" "shell           " "进入容器交互式终端"
     printf "  ${GREEN}%s${NC} %s\n" "logs       " "查看容器日志（实时）"
     printf "  ${GREEN}%s${NC} %s\n" "ip         " "显示公网 IP"
@@ -453,8 +516,8 @@ case "${1:-help}" in
     restart)         restart         ;;
     status)          status          ;;
     update)          update          ;;
-    gen-cert)        gen_cert        ;;
-    gen-cert-simple) gen_cert_sh ;;
+    cert-gen)        gen_cert_sh     ;;
+    cert-update)     cert_update "${2:-}" ;;
     shell)           shell           ;;
     logs)            logs            ;;
     ip)              show_ip         ;;
