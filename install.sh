@@ -148,8 +148,20 @@ create_xray_default_env() {
     local env_file="$SCRIPT_DIR/xray/.env"
     
     if [ ! -f "$env_file" ]; then
-        printf '%b\n' "${CYAN}🔧 配置 3x-ui 登录凭据${NC}"
+        printf '%b\n' "${CYAN}🔧 配置 3x-ui 面板${NC}"
         
+        # 交互式配置面板端口
+        local port=2026
+        printf '%b\n' "${BLUE}请输入 3x-ui 面板端口 [默认: 2026]:${NC}"
+        read -r input_port
+        if [ -n "$input_port" ]; then
+            if [[ "$input_port" =~ ^[0-9]+$ ]] && [ "$input_port" -ge 1024 ] && [ "$input_port" -le 65535 ]; then
+                port="$input_port"
+            else
+                printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: 2026${NC}"
+            fi
+        fi
+
         # 交互式配置用户名
         local username="admin"
         printf '%b\n' "${BLUE}请输入 3x-ui 面板登录用户名 [默认: admin]:${NC}"
@@ -175,8 +187,11 @@ create_xray_default_env() {
         fi
         
         cat > "$env_file" << EOF
-# 3x-ui 登录凭据配置
+# 3x-ui 配置
 # 首次安装后请修改为安全的用户名和密码
+
+# 面板端口
+XUI_PORT=$port
 
 # 面板登录用户名
 XUI_USERNAME=$username
@@ -185,6 +200,7 @@ XUI_USERNAME=$username
 XUI_PASSWORD=$password
 EOF
         printf '%b\n' "${GREEN}✅ 已创建 Xray .env 配置文件：$env_file${NC}"
+        printf '%b\n' "   ${BLUE}🌐 面板端口:${NC} $port"
         printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
         printf '%b\n' "   ${BLUE}🔑 密码:${NC} ${password:0:3}****${password: -3}"
     else
@@ -366,8 +382,17 @@ install_xray() {
         return 1
     fi
 
-    printf '%b\n' "${CYAN}🚀 启动 Xray (3x-ui)...${NC}"
-    (cd "$SCRIPT_DIR/xray" && LIBRE_DATA_DIR="$LIBRE_APP_DIR/xray" bash 3xui.sh start)
+    # 从 .env 读取端口，传给 start 命令
+    local xray_port=2026
+    local xray_env="$SCRIPT_DIR/xray/.env"
+    if [ -f "$xray_env" ]; then
+        local env_port
+        env_port=$(grep -E '^XUI_PORT=' "$xray_env" | cut -d'=' -f2- | tr -d '\r')
+        [ -n "$env_port" ] && xray_port="$env_port"
+    fi
+
+    printf '%b\n' "${CYAN}🚀 启动 Xray (3x-ui)，面板端口: ${BOLD}$xray_port${NC}"
+    (cd "$SCRIPT_DIR/xray" && LIBRE_DATA_DIR="$LIBRE_APP_DIR/xray" bash 3xui.sh start "$xray_port")
 
     printf '\n'
     printf '%b\n' "${GREEN}✅ Xray 安装完成${NC}"
