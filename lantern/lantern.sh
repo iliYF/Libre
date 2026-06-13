@@ -121,14 +121,20 @@ check_certs() {
 
     if [ ! -f "$cert" ] || [ ! -f "$key" ]; then
         printf '%b\n' "${YELLOW}⚠️  未找到证书文件，尝试自动生成...${NC}"
-        if [ -f "$SCRIPT_DIR/scripts/gen_cert.py" ]; then
-            LIBRE_DATA_DIR="$DATA_DIR" python3 "$SCRIPT_DIR/scripts/gen_cert.py" \
-                && printf '%b\n' "${GREEN}✅ 证书生成成功${NC}" \
-                || { printf '%b\n' "${RED}❌ 证书生成失败，请手动将 cert.pem / key.pem 放入 $DATA_DIR/config/ 目录${NC}"; return 1; }
-        else
-            printf '%b\n' "${RED}❌ 未找到 gen_cert.py，请手动将 cert.pem / key.pem 放入 $DATA_DIR/config/ 目录${NC}"
-            return 1
+        
+        # 使用 shell 脚本生成证书
+        if [ -f "$SCRIPT_DIR/scripts/gen_cert.sh" ]; then
+            printf '%b\n' "${CYAN}📝 使用简化版脚本生成证书...${NC}"
+            if LIBRE_DATA_DIR="$DATA_DIR" bash "$SCRIPT_DIR/scripts/gen_cert.sh"; then                printf '%b\n' "${GREEN}✅ 证书生成成功${NC}"
+                return 0
+            else
+                printf '%b\n' "${RED}❌ 证书生成失败${NC}"
+            fi
         fi
+        
+        printf '%b\n' "${RED}❌ 证书自动生成失败，请手动将 cert.pem / key.pem 放入 $DATA_DIR/config/ 目录${NC}"
+        printf '%b\n' "${YELLOW}💡 手动生成方法：openssl req -new -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650${NC}"
+        return 1
     fi
     return 0
 }
@@ -371,6 +377,19 @@ gen_cert() {
     fi
 }
 
+# 生成自签名证书（简化版，使用 openssl）
+gen_cert_sh() {
+    mkdir -p "$DATA_DIR/config"
+    if [ -f "$SCRIPT_DIR/scripts/gen_cert.sh" ]; then
+        LIBRE_DATA_DIR="$DATA_DIR" bash "$SCRIPT_DIR/scripts/gen_cert.sh" \
+            && printf '%b\n' "${GREEN}✅ 证书已生成到 $DATA_DIR/config/ 目录${NC}" \
+            || printf '%b\n' "${RED}❌ 证书生成失败${NC}"
+    else
+        printf '%b\n' "${RED}❌ 未找到 gen_cert.sh${NC}"
+        return 1
+    fi
+}
+
 # 显示帮助信息
 show_help() {
     printf '%b\n' "${BOLD}用法: $0 <命令>${NC}"
@@ -381,8 +400,9 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "restart    " "重启服务"
     printf "  ${GREEN}%s${NC} %s\n" "status     " "查看运行状态"
     printf "  ${GREEN}%s${NC} %s\n" "update     " "拉取最新镜像并重启"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert   " "生成自签名证书到 ./config 目录"
-    printf "  ${GREEN}%s${NC} %s\n" "shell      " "进入容器交互式终端"
+    printf "  ${GREEN}%s${NC} %s\n" "gen-cert        " "生成自签名证书到 ./config 目录"
+    printf "  ${GREEN}%s${NC} %s\n" "gen-cert-simple " "生成证书（简化版，使用 openssl）"
+    printf "  ${GREEN}%s${NC} %s\n" "shell           " "进入容器交互式终端"
     printf "  ${GREEN}%s${NC} %s\n" "logs       " "查看容器日志（实时）"
     printf "  ${GREEN}%s${NC} %s\n" "ip         " "显示公网 IP"
     printf "  ${GREEN}%s${NC} %s\n" "help       " "显示此帮助信息"
@@ -396,14 +416,15 @@ show_help() {
 # 入口分发
 # ─────────────────────────────────────────────
 case "${1:-help}" in
-    start)     start     ;;
-    stop)      stop      ;;
-    restart)   restart   ;;
-    status)    status    ;;
-    update)    update    ;;
-    gen-cert)  gen_cert  ;;
-    shell)     shell     ;;
-    logs)      logs      ;;
-    ip)        show_ip   ;;
-    help|*)    show_help ;;
+    start)           start           ;;
+    stop)            stop            ;;
+    restart)         restart         ;;
+    status)          status          ;;
+    update)          update          ;;
+    gen-cert)        gen_cert        ;;
+    gen-cert-simple) gen_cert_sh ;;
+    shell)           shell           ;;
+    logs)            logs            ;;
+    ip)              show_ip         ;;
+    help|*)          show_help       ;;
 esac

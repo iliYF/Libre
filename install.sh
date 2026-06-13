@@ -186,7 +186,7 @@ create_xray_data_dir() {
     printf '%b\n' "${GREEN}✅ Xray 数据目录已就绪：$data_dir${NC}"
 }
 
-# 下载单个文件，失败时退出
+# 下载单个文件，失败时退出（已有文件会被覆盖更新）
 # 用法：download_file <远程路径> <本地目标路径>
 download_file() {
     local remote_path="$1"
@@ -233,11 +233,11 @@ detect_local_mode() {
 # 下载 Lantern 所需文件到 $INSTALL_DIR/lantern/
 download_lantern_files() {
     printf '%b\n' "${CYAN}⬇️  下载 Lantern 配置文件...${NC}"
-    download_file "lantern/docker-compose.yml"        "$INSTALL_DIR/lantern/docker-compose.yml"
-    download_file "lantern/lantern.sh"                "$INSTALL_DIR/lantern/lantern.sh"
-    download_file "lantern/scripts/gen_cert.py"       "$INSTALL_DIR/lantern/scripts/gen_cert.py"
-    download_file "lantern/scripts/requirements.txt"  "$INSTALL_DIR/lantern/scripts/requirements.txt"
+    download_file "lantern/docker-compose.yml"              "$INSTALL_DIR/lantern/docker-compose.yml"
+    download_file "lantern/lantern.sh"                      "$INSTALL_DIR/lantern/lantern.sh"
+    download_file "lantern/scripts/gen_cert.sh"      "$INSTALL_DIR/lantern/scripts/gen_cert.sh"
     chmod +x "$INSTALL_DIR/lantern/lantern.sh"
+    chmod +x "$INSTALL_DIR/lantern/scripts/gen_cert.sh"
     printf '%b\n' "${GREEN}✅ Lantern 文件下载完成 → $INSTALL_DIR/lantern/${NC}"
 }
 
@@ -310,19 +310,13 @@ install_lantern() {
         return 1
     fi
 
-    # 检查 Python3（证书生成需要）
-    if ! command -v python3 &>/dev/null; then
-        printf '%b\n' "${YELLOW}⚠️  未检测到 Python3，证书自动生成功能将不可用${NC}"
+    # 检查 openssl（证书生成需要）
+    if ! command -v openssl &>/dev/null; then
+        printf '%b\n' "${YELLOW}⚠️  未检测到 openssl，证书自动生成功能将不可用${NC}"
         printf '%b\n' "   请手动将 cert.pem / key.pem 放入 lantern/config/ 目录后再启动"
+        printf '%b\n' "   或安装 openssl：sudo apt install openssl 或 brew install openssl${NC}"
     else
-        printf '%b\n' "${GREEN}✅ Python3 已就绪：$(python3 --version)${NC}"
-        local req_file="$SCRIPT_DIR/lantern/scripts/requirements.txt"
-        if [ -f "$req_file" ]; then
-            printf '%b\n' "${CYAN}📦 安装 Python 依赖...${NC}"
-            pip3 install -r "$req_file" -q \
-                && printf '%b\n' "${GREEN}✅ Python 依赖安装完成${NC}" \
-                || printf '%b\n' "${YELLOW}⚠️  Python 依赖安装失败，证书自动生成可能受影响${NC}"
-        fi
+        printf '%b\n' "${GREEN}✅ openssl 已就绪：$(openssl version)${NC}"
     fi
 
     printf '%b\n' "${CYAN}🚀 启动 Lantern...${NC}"
