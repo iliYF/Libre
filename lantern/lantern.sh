@@ -19,6 +19,30 @@ DEFAULT_API_PORT=18080
 DEFAULT_VPN_PORT=30001
 CONTAINER="lantern"
 
+# 从 .env 文件读取实际端口配置
+read_env_ports() {
+    local env_file="$SCRIPT_DIR/.env"
+    
+    if [ -f "$env_file" ]; then
+        # 读取 API 端口
+        local api_port
+        api_port=$(grep -E '^API_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+        if [ -n "$api_port" ] && validate_port "$api_port" 2>/dev/null; then
+            DEFAULT_API_PORT="$api_port"
+        fi
+        
+        # 读取 VPN 端口
+        local vpn_port
+        vpn_port=$(grep -E '^VPN_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+        if [ -n "$vpn_port" ] && validate_port "$vpn_port" 2>/dev/null; then
+            DEFAULT_VPN_PORT="$vpn_port"
+        fi
+    fi
+}
+
+# 初始化时读取端口配置
+read_env_ports
+
 # 脚本目录（追踪软链接，兼容 Linux / macOS）
 _resolve_script_dir() {
     local src="$0"
@@ -147,7 +171,13 @@ stop() {
 
 # 重启服务
 restart() {
+    # 重新读取端口配置
+    read_env_ports
+    
     printf '%b\n' "${CYAN}🔄 重启 Lantern Server Manager...${NC}"
+    printf '%b\n' "   ${BLUE}API 端口:${NC} ${DEFAULT_API_PORT}"
+    printf '%b\n' "   ${BLUE}VPN 端口:${NC} ${DEFAULT_VPN_PORT}"
+    
     docker_compose restart \
         && printf '%b\n' "${GREEN}✅ 重启完成${NC}" \
         || { printf '%b\n' "${RED}❌ 重启失败${NC}"; return 1; }
@@ -167,6 +197,138 @@ status() {
     else
         printf '%b\n' "${RED}❌ 状态: 未运行${NC}"
     fi
+}
+
+# 交互式配置端口并保存到 .env 文件
+config_ports() {
+    local env_file="$SCRIPT_DIR/.env"
+    
+    # 读取当前端口配置
+    local current_api_port current_vpn_port
+    current_api_port="$DEFAULT_API_PORT"
+    current_vpn_port="$DEFAULT_VPN_PORT"
+    
+    if [ -f "$env_file" ]; then
+        local temp_api_port temp_vpn_port
+        temp_api_port=$(grep -E '^API_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+        temp_vpn_port=$(grep -E '^VPN_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+        
+        [ -n "$temp_api_port" ] && current_api_port="$temp_api_port"
+        [ -n "$temp_vpn_port" ] && current_vpn_port="$temp_vpn_port"
+    fi
+    
+    printf '%b\n' "${CYAN}🔧 当前端口配置${NC}"
+    printf '%b\n' "   ${BLUE}🌐 Web UI / API 端口:${NC} $current_api_port"
+    printf '%b\n' "   ${BLUE}🔒 VPN 端口 (TCP):${NC} $current_vpn_port"
+    printf '%b\n' ""
+
+    # 询问是否修改端口
+    printf '%b\n' "${BLUE}是否修改端口配置？${NC}"
+    printf '%b\n' "   ${GREEN}1${NC}) 使用当前端口（直接重启生效）"
+    printf '%b\n' "   ${GREEN}2${NC}) 修改 Web UI / API 端口"
+    printf '%b\n' "   ${GREEN}3${NC}) 修改 VPN 端口"
+    printf '%b\n' "   ${GREEN}4${NC}) 修改所有端口"
+    printf '%b\n' "   ${RED}0${NC}) 取消操作"
+    printf '%b\n' ""
+
+    local choice
+    printf '%b\n' "${BLUE}请选择操作 [1-4, 0取消]:${NC}"
+    read -r choice
+
+    local api_port="$current_api_port"
+    local vpn_port="$current_vpn_port"
+
+    case "$choice" in
+        1)
+            # 使用当前端口
+            printf '%b\n' "${CYAN}✅ 使用当前端口配置...${NC}"
+            ;;
+        2)
+            # 修改 API 端口
+            printf '%b\n' "${CYAN}🔧 修改 Web UI / API 端口${NC}"
+            printf '%b\n' "${BLUE}请输入新的 Web UI / API 端口 [当前: $current_api_port]:${NC}"
+            read -r input_port
+            if [ -n "$input_port" ]; then
+                if validate_port "$input_port"; then
+                    api_port="$input_port"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  端口无效，使用原端口${NC}"
+                fi
+            fi
+            ;;
+        3)
+            # 修改 VPN 端口
+            printf '%b\n' "${CYAN}🔧 修改 VPN 端口${NC}"
+            printf '%b\n' "${BLUE}请输入新的 VPN 端口 [当前: $current_vpn_port]:${NC}"
+            read -r input_port
+            if [ -n "$input_port" ]; then
+                if validate_port "$input_port"; then
+                    vpn_port="$input_port"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  端口无效，使用原端口${NC}"
+                fi
+            fi
+            ;;
+        4)
+            # 修改所有端口
+            printf '%b\n' "${CYAN}🔧 修改所有端口${NC}"
+            
+            printf '%b\n' "${BLUE}请输入新的 Web UI / API 端口 [当前: $current_api_port]:${NC}"
+            read -r input_api_port
+            if [ -n "$input_api_port" ]; then
+                if validate_port "$input_api_port"; then
+                    api_port="$input_api_port"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  API 端口无效，使用原端口${NC}"
+                fi
+            fi
+            
+            printf '%b\n' "${BLUE}请输入新的 VPN 端口 [当前: $current_vpn_port]:${NC}"
+            read -r input_vpn_port
+            if [ -n "$input_vpn_port" ]; then
+                if validate_port "$input_vpn_port"; then
+                    vpn_port="$input_vpn_port"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  VPN 端口无效，使用原端口${NC}"
+                fi
+            fi
+            ;;
+        0|*)
+            printf '%b\n' "${YELLOW}❌ 操作已取消${NC}"
+            return 0
+            ;;
+    esac
+
+    # 更新 .env 文件
+    update_env_file "$env_file" "$api_port" "$vpn_port"
+    
+    # 重新读取端口配置
+    read_env_ports
+    
+    printf '%b\n' "${GREEN}✅ 端口配置已保存到 .env 文件${NC}"
+    printf '%b\n' "   ${BLUE}🌐 Web UI / API 端口:${NC} $api_port"
+    printf '%b\n' "   ${BLUE}🔒 VPN 端口:${NC} $vpn_port"
+    printf '%b\n' "${YELLOW}📝 重启服务后新配置生效${NC}"
+}
+
+# 更新 .env 文件中的端口配置
+update_env_file() {
+    local env_file="$1"
+    local api_port="$2"
+    local vpn_port="$3"
+    
+    # 备份原文件
+    cp "$env_file" "$env_file.bak" 2>/dev/null
+    
+    # 更新文件内容
+    cat > "$env_file" << EOF
+# Lantern Server Manager 端口配置
+# Web UI / REST API 端口（宿主机端口）
+API_PORT=$api_port
+
+# VPN 端口（宿主机 UDP 端口）
+VPN_PORT=$vpn_port
+EOF
 }
 
 # 拉取最新镜像并重启

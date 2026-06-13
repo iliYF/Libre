@@ -168,7 +168,7 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "xray <子命令>     " "执行 Xray 专属操作"
     printf "  ${BLUE}%s${NC} %s\n" "  port [端口]     " "查看或修改面板端口"
     printf "  ${BLUE}%s${NC} %s\n" "  reset-port      " "重置端口为默认值"
-    printf "  ${BLUE}%s${NC} %s\n" "  reset-creds     " "从 .env 重置登录凭据"
+    printf "  ${BLUE}%s${NC} %s\n" "  reset-creds     " "交互式重置登录凭据（保存到 .env）"
     printf "  ${BLUE}%s${NC} %s\n" "  cli [命令]      " "在容器内执行 x-ui 命令"
     printf "  ${BLUE}%s${NC} %s\n" "  help            " "查看所有 Xray 子命令"
     printf '\n'
@@ -191,8 +191,9 @@ show_lantern_help() {
     printf '%b\n' "${BOLD}用法: $me lantern <子命令> [参数]${NC}"
     printf '\n'
     printf '%b\n' "${BOLD}子命令:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert  " "生成自签名证书到数据目录"
-    printf "  ${GREEN}%s${NC} %s\n" "help      " "显示此帮助信息"
+    printf "  ${GREEN}%s${NC} %s\n" "gen-cert     " "生成自签名证书到数据目录"
+    printf "  ${GREEN}%s${NC} %s\n" "config-ports " "交互式配置端口（保存到 .env）"
+    printf "  ${GREEN}%s${NC} %s\n" "help         " "显示此帮助信息"
     printf '\n'
     printf '%b\n' "${YELLOW}提示：start / stop / restart / status / update / logs / shell / ip${NC}"
     printf '%b\n' "${YELLOW}      等公共命令请使用：$me <命令> lantern${NC}"
@@ -207,7 +208,7 @@ show_xray_help() {
     printf '%b\n' "${BOLD}子命令:${NC}"
     printf "  ${GREEN}%s${NC} %s\n" "port [端口]  " "查看或修改面板端口"
     printf "  ${GREEN}%s${NC} %s\n" "reset-port   " "重置端口为默认值（2026）"
-    printf "  ${GREEN}%s${NC} %s\n" "reset-creds  " "从 .env 重置登录凭据"
+    printf "  ${GREEN}%s${NC} %s\n" "reset-creds  " "交互式重置登录凭据（保存到 .env）"
     printf "  ${GREEN}%s${NC} %s\n" "cli [命令]   " "在容器内执行 x-ui 命令"
     printf "  ${GREEN}%s${NC} %s\n" "help         " "显示此帮助信息"
     printf '\n'
@@ -230,6 +231,10 @@ case "$CMD" in
             gen-cert)
                 print_header "Lantern — gen-cert"
                 run_lantern gen-cert
+                ;;
+            config-ports)
+                print_header "Lantern — config-ports"
+                run_lantern config-ports
                 ;;
             help|--help|-h)
                 show_lantern_help

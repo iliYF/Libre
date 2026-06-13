@@ -81,6 +81,104 @@ create_lantern_data_dir() {
     printf '%b\n' "${GREEN}✅ Lantern 数据目录已就绪：$data_dir${NC}"
 }
 
+# 创建默认的 .env 文件（如果不存在）
+create_default_env() {
+    local env_file="$SCRIPT_DIR/lantern/.env"
+    
+    if [ ! -f "$env_file" ]; then
+        printf '%b\n' "${CYAN}🔧 配置 Lantern Server Manager 端口${NC}"
+        
+        # 交互式配置 API 端口
+        local api_port=18080
+        printf '%b\n' "${BLUE}请输入 Web UI / REST API 端口 [默认: 18080]:${NC}"
+        read -r input_api_port
+        if [ -n "$input_api_port" ]; then
+            if [[ "$input_api_port" =~ ^[0-9]+$ ]] && [ "$input_api_port" -ge 1024 ] && [ "$input_api_port" -le 65535 ]; then
+                api_port="$input_api_port"
+            else
+                printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: 18080${NC}"
+            fi
+        fi
+        
+        # 交互式配置 VPN 端口
+        local vpn_port=30001
+        printf '%b\n' "${BLUE}请输入 VPN 端口 (TCP) [默认: 30001]:${NC}"
+        read -r input_vpn_port
+        if [ -n "$input_vpn_port" ]; then
+            if [[ "$input_vpn_port" =~ ^[0-9]+$ ]] && [ "$input_vpn_port" -ge 1024 ] && [ "$input_vpn_port" -le 65535 ]; then
+                vpn_port="$input_vpn_port"
+            else
+                printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: 30001${NC}"
+            fi
+        fi
+        
+        cat > "$env_file" << EOF
+# Lantern Server Manager 端口配置
+# 修改后重启服务生效
+
+# Web UI / REST API 端口
+API_PORT=$api_port
+
+# VPN 端口（TCP）
+VPN_PORT=$vpn_port
+EOF
+        printf '%b\n' "${GREEN}✅ 已创建 .env 配置文件：$env_file${NC}"
+        printf '%b\n' "   ${BLUE}🌐 Web UI 端口:${NC} $api_port"
+        printf '%b\n' "   ${BLUE}🔒 VPN 端口:${NC} $vpn_port"
+    else
+        printf '%b\n' "${YELLOW}⚠️  .env 文件已存在：$env_file${NC}"
+    fi
+}
+
+# 创建 Xray 默认的 .env 文件（如果不存在）
+create_xray_default_env() {
+    local env_file="$SCRIPT_DIR/xray/.env"
+    
+    if [ ! -f "$env_file" ]; then
+        printf '%b\n' "${CYAN}🔧 配置 3x-ui 登录凭据${NC}"
+        
+        # 交互式配置用户名
+        local username="admin"
+        printf '%b\n' "${BLUE}请输入 3x-ui 面板登录用户名 [默认: admin]:${NC}"
+        read -r input_username
+        if [ -n "$input_username" ]; then
+            if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
+                username="$input_username"
+            else
+                printf '%b\n' "${YELLOW}⚠️  用户名无效（仅允许字母、数字、下划线、减号，长度≥3），使用默认值: admin${NC}"
+            fi
+        fi
+        
+        # 交互式配置密码
+        local password="admin123"
+        printf '%b\n' "${BLUE}请输入 3x-ui 面板登录密码 [默认: admin123]:${NC}"
+        read -r input_password
+        if [ -n "$input_password" ]; then
+            if [ ${#input_password} -ge 6 ]; then
+                password="$input_password"
+            else
+                printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用默认值: admin123${NC}"
+            fi
+        fi
+        
+        cat > "$env_file" << EOF
+# 3x-ui 登录凭据配置
+# 首次安装后请修改为安全的用户名和密码
+
+# 面板登录用户名
+XUI_USERNAME=$username
+
+# 面板登录密码（建议修改为强密码）
+XUI_PASSWORD=$password
+EOF
+        printf '%b\n' "${GREEN}✅ 已创建 Xray .env 配置文件：$env_file${NC}"
+        printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
+        printf '%b\n' "   ${BLUE}🔑 密码:${NC} ${password:0:3}****${password: -3}"
+    else
+        printf '%b\n' "${YELLOW}⚠️  Xray .env 文件已存在：$env_file${NC}"
+    fi
+}
+
 # 创建 Xray 数据目录
 create_xray_data_dir() {
     local data_dir="$LIBRE_APP_DIR/xray"
@@ -136,7 +234,6 @@ detect_local_mode() {
 download_lantern_files() {
     printf '%b\n' "${CYAN}⬇️  下载 Lantern 配置文件...${NC}"
     download_file "lantern/docker-compose.yml"        "$INSTALL_DIR/lantern/docker-compose.yml"
-    download_file "lantern/.env"                      "$INSTALL_DIR/lantern/.env"
     download_file "lantern/lantern.sh"                "$INSTALL_DIR/lantern/lantern.sh"
     download_file "lantern/scripts/gen_cert.py"       "$INSTALL_DIR/lantern/scripts/gen_cert.py"
     download_file "lantern/scripts/requirements.txt"  "$INSTALL_DIR/lantern/scripts/requirements.txt"
@@ -203,8 +300,9 @@ install_lantern() {
         download_lantern_files
     fi
 
-    # 创建数据目录
+    # 创建数据目录和默认配置文件
     create_lantern_data_dir
+    create_default_env
 
     local lantern_sh="$SCRIPT_DIR/lantern/lantern.sh"
     if [ ! -f "$lantern_sh" ]; then
@@ -246,8 +344,9 @@ install_xray() {
         download_xray_files
     fi
 
-    # 创建数据目录
+    # 创建数据目录和默认配置文件
     create_xray_data_dir
+    create_xray_default_env
 
     local xray_sh="$SCRIPT_DIR/xray/3xui.sh"
     if [ ! -f "$xray_sh" ]; then

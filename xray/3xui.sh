@@ -190,25 +190,144 @@ reset_port() {
 }
 
 # 从 .env 文件读取用户名和密码并重置面板登录凭据
+# 支持交互式修改并保存到 .env 文件
 reset_credentials() {
     local env_file
     env_file="$SCRIPT_DIR/.env"  # .env 属于脚本配置，保留在脚本目录
 
-    [ -f "$env_file" ] || { printf '%b\n' "${RED}❌ 未找到 .env 文件: $env_file${NC}"; return 1; }
+    # 如果 .env 文件不存在，创建默认文件
+    if [ ! -f "$env_file" ]; then
+        printf '%b\n' "${YELLOW}⚠️  未找到 .env 文件，创建默认配置...${NC}"
+        cat > "$env_file" << EOF
+# 3x-ui 登录凭据配置
+# 修改后执行 reset-creds 命令生效
 
-    local username password
-    username=$(grep -E '^XUI_USERNAME=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
-    password=$(grep -E '^XUI_PASSWORD=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+# 面板登录用户名
+XUI_USERNAME=admin
 
-    [ -n "$username" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_USERNAME${NC}"; return 1; }
-    [ -n "$password" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_PASSWORD${NC}"; return 1; }
+# 面板登录密码（建议修改为强密码）
+XUI_PASSWORD=admin123
+EOF
+        printf '%b\n' "${GREEN}✅ 已创建默认 .env 配置文件：$env_file${NC}"
+    fi
 
+    # 读取当前凭据
+    local current_username current_password
+    current_username=$(grep -E '^XUI_USERNAME=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+    current_password=$(grep -E '^XUI_PASSWORD=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+
+    [ -n "$current_username" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_USERNAME${NC}"; return 1; }
+    [ -n "$current_password" ] || { printf '%b\n' "${RED}❌ .env 中未找到 XUI_PASSWORD${NC}"; return 1; }
+
+    printf '%b\n' "${CYAN}🔧 当前登录凭据配置${NC}"
+    printf '%b\n' "   ${BLUE}👤 用户名:${NC} $current_username"
+    printf '%b\n' "   ${BLUE}🔑 密码:${NC} ${current_password:0:3}****${current_password: -3}"
+    printf '%b\n' ""
+
+    # 询问是否修改凭据
+    printf '%b\n' "${BLUE}是否修改登录凭据？${NC}"
+    printf '%b\n' "   ${GREEN}1${NC}) 使用当前凭据（直接重置）"
+    printf '%b\n' "   ${GREEN}2${NC}) 修改用户名和密码"
+    printf '%b\n' "   ${GREEN}3${NC}) 仅修改密码"
+    printf '%b\n' "   ${RED}0${NC}) 取消操作"
+    printf '%b\n' ""
+
+    local choice
+    printf '%b\n' "${BLUE}请选择操作 [1-3, 0取消]:${NC}"
+    read -r choice
+
+    local username="$current_username"
+    local password="$current_password"
+
+    case "$choice" in
+        1)
+            # 使用当前凭据
+            printf '%b\n' "${CYAN}✅ 使用当前凭据进行重置...${NC}"
+            ;;
+        2)
+            # 修改用户名和密码
+            printf '%b\n' "${CYAN}🔧 修改用户名和密码${NC}"
+            
+            # 交互式输入新用户名
+            printf '%b\n' "${BLUE}请输入新的用户名 [当前: $current_username]:${NC}"
+            read -r input_username
+            if [ -n "$input_username" ]; then
+                if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
+                    username="$input_username"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  用户名无效（仅允许字母、数字、下划线、减号，长度≥3），使用原用户名${NC}"
+                fi
+            fi
+            
+            # 交互式输入新密码
+            printf '%b\n' "${BLUE}请输入新的密码 [当前: ****]:${NC}"
+            read -r -s input_password
+            printf '%b\n' ""
+            if [ -n "$input_password" ]; then
+                if [ ${#input_password} -ge 6 ]; then
+                    password="$input_password"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用原密码${NC}"
+                fi
+            fi
+            
+            # 更新 .env 文件
+            update_env_file "$env_file" "$username" "$password"
+            ;;
+        3)
+            # 仅修改密码
+            printf '%b\n' "${CYAN}🔧 仅修改密码${NC}"
+            
+            printf '%b\n' "${BLUE}请输入新的密码 [当前: ****]:${NC}"
+            read -r -s input_password
+            printf '%b\n' ""
+            if [ -n "$input_password" ]; then
+                if [ ${#input_password} -ge 6 ]; then
+                    password="$input_password"
+                    # 更新 .env 文件
+                    update_env_file "$env_file" "$username" "$password"
+                else
+                    printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用原密码${NC}"
+                fi
+            fi
+            ;;
+        0|*)
+            printf '%b\n' "${YELLOW}❌ 操作已取消${NC}"
+            return 0
+            ;;
+    esac
+
+    # 重置凭据
     printf '%b\n' "${CYAN}🔑 重置登录凭据 (用户名: $username)...${NC}"
     cli setting -username "$username" -password "$password" \
         || { printf '%b\n' "${RED}❌ 凭据重置失败${NC}"; return 1; }
 
     docker restart "$CONTAINER"
     printf '%b\n' "${GREEN}✅ 登录凭据已更新，请使用新用户名和密码登录${NC}"
+}
+
+# 更新 .env 文件中的凭据配置
+update_env_file() {
+    local env_file="$1"
+    local username="$2"
+    local password="$3"
+    
+    # 备份原文件
+    cp "$env_file" "$env_file.bak" 2>/dev/null
+    
+    # 更新文件内容
+    cat > "$env_file" << EOF
+# 3x-ui 登录凭据配置
+# 修改后执行 reset-creds 命令生效
+
+# 面板登录用户名
+XUI_USERNAME=$username
+
+# 面板登录密码（建议修改为强密码）
+XUI_PASSWORD=$password
+EOF
+    
+    printf '%b\n' "${GREEN}✅ 凭据配置已保存到 .env 文件${NC}"
 }
 
 # 拉取最新镜像并重启
