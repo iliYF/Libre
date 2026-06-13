@@ -59,10 +59,16 @@ fi
 
 # 获取公网 IP，依次尝试多个服务
 get_ip() {
-    local ip
-    for service in "ifconfig.me" "icanhazip.com" "api.ipify.org"; do
-        ip=$(curl -s --connect-timeout 3 "$service" 2>/dev/null)
-        [ -n "$ip" ] && { echo "$ip"; return 0; }
+    local ip raw
+    for service in "ip.sb" "icanhazip.com" "ifconfig.me" "api.ipify.org"; do
+        raw=$(curl -s4 --connect-timeout 5 "$service" 2>/dev/null)
+        # 提取纯 IPv4 地址，过滤特殊符号
+        ip=$(echo "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
+        # 过滤私有地址段：10.x、172.16-31.x、192.168.x
+        if [ -n "$ip" ] && ! echo "$ip" | grep -qE '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)'; then
+            echo "$ip"
+            return 0
+        fi
     done
     echo "未知"
     return 1

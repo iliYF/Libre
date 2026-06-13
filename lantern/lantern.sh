@@ -19,30 +19,6 @@ DEFAULT_API_PORT=18080
 DEFAULT_VPN_PORT=30001
 CONTAINER="lantern"
 
-# 从 .env 文件读取实际端口配置
-read_env_ports() {
-    local env_file="$SCRIPT_DIR/.env"
-    
-    if [ -f "$env_file" ]; then
-        # 读取 API 端口
-        local api_port
-        api_port=$(grep -E '^API_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
-        if [ -n "$api_port" ] && validate_port "$api_port" 2>/dev/null; then
-            DEFAULT_API_PORT="$api_port"
-        fi
-        
-        # 读取 VPN 端口
-        local vpn_port
-        vpn_port=$(grep -E '^VPN_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
-        if [ -n "$vpn_port" ] && validate_port "$vpn_port" 2>/dev/null; then
-            DEFAULT_VPN_PORT="$vpn_port"
-        fi
-    fi
-}
-
-# 初始化时读取端口配置
-read_env_ports
-
 # 脚本目录（追踪软链接，兼容 Linux / macOS）
 _resolve_script_dir() {
     local src="$0"
@@ -76,12 +52,18 @@ fi
 # 工具函数
 # ─────────────────────────────────────────────
 
-# 获取公网 IP，依次尝试多个服务
+# 获取公网 IP，依次尝试多个服务（过滤私有地址，确保返回公网 IP）
 get_ip() {
-    local ip
-    for service in "ifconfig.me" "icanhazip.com" "api.ipify.org"; do
-        ip=$(curl -s --connect-timeout 3 "$service" 2>/dev/null)
-        [ -n "$ip" ] && { echo "$ip"; return 0; }
+    local ip raw
+    for service in "ip.sb" "icanhazip.com" "ifconfig.me" "api.ipify.org"; do
+        raw=$(curl -s4 --connect-timeout 5 "$service" 2>/dev/null)
+        # 提取纯 IPv4 地址，过滤特殊符号
+        ip=$(echo "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
+        # 过滤私有地址段：10.x、172.16-31.x、192.168.x
+        if [ -n "$ip" ] && ! echo "$ip" | grep -qE '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)'; then
+            echo "$ip"
+            return 0
+        fi
     done
     echo "未知"
     return 1
@@ -105,6 +87,27 @@ validate_port() {
     fi
     return 0
 }
+
+# 从 .env 文件读取实际端口配置（需在 validate_port 定义后调用）
+read_env_ports() {
+    local env_file="$SCRIPT_DIR/.env"
+
+    [ -f "$env_file" ] || return 0
+
+    local api_port vpn_port
+    api_port=$(grep -E '^API_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+    vpn_port=$(grep -E '^VPN_PORT=' "$env_file" | cut -d'=' -f2- | tr -d '\r')
+
+    if [ -n "$api_port" ] && validate_port "$api_port" 2>/dev/null; then
+        DEFAULT_API_PORT="$api_port"
+    fi
+    if [ -n "$vpn_port" ] && validate_port "$vpn_port" 2>/dev/null; then
+        DEFAULT_VPN_PORT="$vpn_port"
+    fi
+}
+
+# 初始化时读取端口配置
+read_env_ports
 
 # 检查容器是否正在运行
 is_running() {
@@ -145,6 +148,9 @@ check_certs() {
 
 # 启动服务
 start() {
+    # 重新读取端口配置，确保打印值与实际启动端口一致
+    read_env_ports
+
     check_certs || return 1
 
     printf '%b\n' "${CYAN}🚀 启动 Lantern Server Manager...${NC}"
