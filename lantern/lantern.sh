@@ -370,6 +370,31 @@ show_ip() {
     printf '%b\n' "${BLUE}🌐 公网 IP: ${BOLD}$(get_ip)${NC}"
 }
 
+# 健康探测
+health_check() {
+    read_env_ports
+    local ip
+    ip=$(get_ip)
+    local url="https://$ip:${DEFAULT_API_PORT}/api/v1/health"
+
+    printf '%b\n' "${CYAN}🏥 健康探测: $url${NC}"
+
+    local http_code
+    http_code=$(curl -sk -o /dev/null -w '%{http_code}' \
+        --connect-timeout 10 --max-time 15 "$url" 2>/dev/null)
+
+    if [ "$http_code" = "200" ]; then
+        printf '%b\n' "${GREEN}✅ 服务健康 (HTTP $http_code)${NC}"
+        return 0
+    elif [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
+        printf '%b\n' "${RED}❌ 连接失败，服务可能未启动或端口不通${NC}"
+        return 1
+    else
+        printf '%b\n' "${YELLOW}⚠️  服务响应异常 (HTTP $http_code)${NC}"
+        return 1
+    fi
+}
+
 # 生成自签名证书
 gen_cert() {
     mkdir -p "$DATA_DIR/config"
@@ -411,6 +436,7 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "shell           " "进入容器交互式终端"
     printf "  ${GREEN}%s${NC} %s\n" "logs       " "查看容器日志（实时）"
     printf "  ${GREEN}%s${NC} %s\n" "ip         " "显示公网 IP"
+    printf "  ${GREEN}%s${NC} %s\n" "health     " "健康探测（检查 API /health 接口）"
     printf "  ${GREEN}%s${NC} %s\n" "help       " "显示此帮助信息"
     printf '\n'
     printf '%b\n' "${BOLD}默认端口:${NC}"
@@ -432,5 +458,6 @@ case "${1:-help}" in
     shell)           shell           ;;
     logs)            logs            ;;
     ip)              show_ip         ;;
+    health)          health_check    ;;
     help|*)          show_help       ;;
 esac

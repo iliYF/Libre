@@ -40,6 +40,19 @@ else
 fi
 
 # ─────────────────────────────────────────────
+# 中断处理
+# ─────────────────────────────────────────────
+
+_on_interrupt() {
+    printf '\n'
+    printf '%b\n' "${YELLOW}⚠️  安装已被用户中断${NC}"
+    printf '%b\n' "   如需重新安装，请再次运行安装脚本"
+    exit 130
+}
+
+trap '_on_interrupt' INT TERM
+
+# ─────────────────────────────────────────────
 # 工具函数
 # ─────────────────────────────────────────────
 
@@ -326,6 +339,11 @@ install_lantern() {
     printf '%b\n' "${GREEN}✅ Lantern 安装完成${NC}"
     printf '%b\n' "   管理命令：${BOLD}bash $SCRIPT_DIR/lantern/lantern.sh <命令>${NC}"
     printf '%b\n' "   统一管理：${BOLD}bash $SCRIPT_DIR/libre.sh <命令> lantern${NC}"
+    printf '%b\n' "   健康探测：${BOLD}bash $SCRIPT_DIR/lantern/lantern.sh health${NC}"
+
+    printf '\n'
+    printf '%b\n' "${CYAN}🏥 执行健康探测...${NC}"
+    LIBRE_DATA_DIR="$LIBRE_APP_DIR/lantern" bash "$lantern_sh" health
 }
 
 install_xray() {

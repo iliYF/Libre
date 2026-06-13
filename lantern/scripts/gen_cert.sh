@@ -23,25 +23,20 @@ check_openssl() {
     return 0
 }
 
-# 获取本机 IP 地址
-get_local_ip() {
-    local ip
-    # 尝试多种方法获取 IP（兼容 macOS 和 Linux）
-    if command -v ip &>/dev/null; then
-        # Linux 系统
-        ip=$(ip route get 8.8.8.8 2>/dev/null | grep -Eo 'src [0-9.]+' | awk '{print $2}' | head -1)
-    elif command -v ifconfig &>/dev/null; then
-        # macOS 系统
-        ip=$(ifconfig | grep -E 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | head -1)
-    fi
-    
-    if [ -z "$ip" ]; then
-        ip=$(hostname -I 2>/dev/null | awk '{print $1}' | head -1)
-    fi
-    if [ -z "$ip" ]; then
-        ip="127.0.0.1"
-    fi
-    echo "$ip"
+# 获取公网 IP 地址（依次尝试多个服务，过滤私有地址）
+get_public_ip() {
+    local ip raw
+    for service in "ip.sb" "icanhazip.com" "ifconfig.me" "api.ipify.org"; do
+        raw=$(curl -s4 --connect-timeout 5 "$service" 2>/dev/null)
+        ip=$(echo "$raw" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
+        # 过滤私有地址段：10.x、172.16-31.x、192.168.x
+        if [ -n "$ip" ] && ! echo "$ip" | grep -qE '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)'; then
+            echo "$ip"
+            return 0
+        fi
+    done
+    echo ""
+    return 1
 }
 
 # 生成自签名证书
@@ -119,17 +114,46 @@ main() {
     if ! check_openssl; then
         exit 1
     fi
-    
-    # 获取本机 IP
-    local local_ip
-    local_ip=$(get_local_ip)
-    echo "🌐 检测到本机 IP：$local_ip"
-    
+
+    # 检查证书是否已存在
+    if [ -f "$CERT_PATH" ] && [ -f "$KEY_PATH" ]; then
+        echo "⚠️  证书文件已存在："
+        echo "   证书：$CERT_PATH"
+        echo "   私钥：$KEY_PATH"
+        echo -n "是否覆盖重新生成？[y/N] "
+        read -r confirm
+        case "$confirm" in
+            y|Y) echo "🔄 将覆盖现有证书..." ;;
+            *)
+                echo "✅ 已取消，保留现有证书"
+                exit 0
+                ;;
+        esac
+    fi
+
+    # 获取公网 IP
+    local public_ip
+    echo "🌐 正在获取公网 IP..."
+    public_ip=$(get_public_ip)
+    if [ -n "$public_ip" ]; then
+        echo "🌐 检测到公网 IP：$public_ip"
+    else
+        echo "⚠️  无法自动获取公网 IP"
+    fi
+
     # 询问用户 IP
-    echo -n "请输入服务器公网 IP（直接回车使用 $local_ip）："
+    if [ -n "$public_ip" ]; then
+        echo -n "请输入服务器公网 IP（直接回车使用 $public_ip）："
+    else
+        echo -n "请输入服务器公网 IP："
+    fi
     read -r user_ip
-    
-    local target_ip="${user_ip:-$local_ip}"
+
+    local target_ip="${user_ip:-$public_ip}"
+    if [ -z "$target_ip" ]; then
+        echo "❌ 未输入 IP 地址"
+        exit 1
+    fi
     
     # 验证 IP 格式
     if ! echo "$target_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then

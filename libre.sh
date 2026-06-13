@@ -13,6 +13,8 @@
 #   libre start lantern       # 启动 Lantern
 #   libre stop xray           # 停止 Xray
 #   libre restart all         # 重启所有服务
+#   libre remove all          # 停止并删除容器
+#   libre reinstall all       # 删除容器后重新安装
 #   libre logs xray           # 查看 Xray 日志（必须指定服务）
 #   libre shell lantern       # 进入 Lantern 容器终端（必须指定服务）
 #
@@ -110,6 +112,33 @@ parse_service() {
     esac
 }
 
+# 列出指定服务的容器信息（用于删除前确认）
+print_container_info() {
+    local svc="$1"
+    local containers=()
+    case "$svc" in
+        lantern) containers=("lantern") ;;
+        xray)    containers=("xray") ;;
+        all)     containers=("lantern" "xray") ;;
+    esac
+
+    printf '%b\n' "${BOLD}当前容器状态：${NC}"
+    local found=0
+    for name in "${containers[@]}"; do
+        local info
+        info=$(docker ps -a --filter "name=^${name}$" \
+            --format "  {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null)
+        if [ -n "$info" ]; then
+            printf '%b\n' "$info"
+            found=1
+        else
+            printf "  ${YELLOW}%-12s${NC} %s\n" "$name" "（容器不存在）"
+        fi
+    done
+    [ "$found" -eq 0 ] && printf '%b\n' "  ${YELLOW}未找到任何运行中的容器${NC}"
+    printf '\n'
+}
+
 # ─────────────────────────────────────────────
 # 公共命令分发
 # ─────────────────────────────────────────────
@@ -157,7 +186,9 @@ show_help() {
     printf "  ${GREEN}%s${NC} %s\n" "logs    <服务>  " "查看容器日志（实时，必须指定服务）"
     printf "  ${GREEN}%s${NC} %s\n" "shell   <服务>  " "进入容器终端（必须指定服务）"
     printf "  ${GREEN}%s${NC} %s\n" "ip      [服务]  " "显示公网 IP（默认 all）"
-    printf "  ${GREEN}%s${NC} %s\n" "install [服务]  " "安装并首次启动服务（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "install   [服务]" "安装并首次启动服务（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "remove    [服务]" "停止并删除容器（默认 all）"
+    printf "  ${GREEN}%s${NC} %s\n" "reinstall [服务]" "删除容器后重新安装（默认 all）"
     printf '\n'
     printf '%b\n' "${BOLD}Lantern 子命令:${NC}"
     printf "  ${GREEN}%s${NC} %s\n" "lantern <子命令>  " "执行 Lantern 专属操作"
@@ -176,6 +207,8 @@ show_help() {
     printf '\n'
     printf '%b\n' "${BOLD}示例:${NC}"
     printf "  %s status\n"                    "$me"
+    printf "  %s remove lantern\n"             "$me"
+    printf "  %s reinstall all\n"              "$me"
     printf "  %s start lantern\n"             "$me"
     printf "  %s restart all\n"               "$me"
     printf "  %s logs xray\n"                 "$me"
@@ -191,11 +224,11 @@ show_lantern_help() {
     printf '%b\n' "${BOLD}用法: $me lantern <子命令> [参数]${NC}"
     printf '\n'
     printf '%b\n' "${BOLD}子命令:${NC}"
-    printf "  ${GREEN}%s${NC} %s\n" "gen-cert        " "生成自签名证书到数据目录"
+    printf "  ${GREEN}%s${NC} %s\n" "gen-cert        " "生成自签名证书"
     printf "  ${GREEN}%s${NC} %s\n" "gen-cert-simple " "生成证书（简化版，使用 openssl）"
     printf "  ${GREEN}%s${NC} %s\n" "config-ports    " "交互式配置端口（保存到 .env）"
-    printf "  ${GREEN}%s${NC} %s\n" "help            " "显示此帮助信息"
-    printf '\n'
+    printf "  ${GREEN}%s${NC} %s\n" "health          " "健康探测（检查 API /health 接口）"
+    printf "  ${GREEN}%s${NC} %s\n" "help            " "显示此帮助信息"    printf '\n'
     printf '%b\n' "${YELLOW}提示：start / stop / restart / status / update / logs / shell / ip${NC}"
     printf '%b\n' "${YELLOW}      等公共命令请使用：$me <命令> lantern${NC}"
 }
@@ -240,6 +273,10 @@ case "$CMD" in
             config-ports)
                 print_header "Lantern — config-ports"
                 run_lantern config-ports
+                ;;
+            health)
+                print_header "Lantern — health"
+                run_lantern health
                 ;;
             help|--help|-h)
                 show_lantern_help
@@ -294,6 +331,49 @@ case "$CMD" in
     install)
         SVC="${1:-all}"
         parse_service "$SVC" > /dev/null
+        bash "$SCRIPT_DIR/install.sh" "$SVC"
+        ;;
+
+    # ── remove：停止并删除容器 ─────────────────
+    remove)
+        SVC=$(parse_service "${1:-all}")
+        shift || true
+        printf '%b\n' "${YELLOW}⚠️  即将停止并删除容器：${BOLD}$SVC${NC}"
+        printf '%b\n' "${YELLOW}   此操作不可撤销，容器将被移除（数据目录保留）${NC}"
+        printf '\n'
+        print_container_info "$SVC"
+        printf '%b' "${RED}确认删除？[y/N]：${NC} "
+        read -r _confirm
+        case "$_confirm" in
+            y|Y) ;;
+            *)
+                printf '%b\n' "${YELLOW}❌ 操作已取消${NC}"
+                exit 0
+                ;;
+        esac
+        dispatch "stop" "$SVC" "$@"
+        ;;
+
+    # ── reinstall：删除容器后重新安装 ──────────
+    reinstall)
+        SVC="${1:-all}"
+        parse_service "$SVC" > /dev/null
+        shift || true
+        printf '%b\n' "${YELLOW}⚠️  即将删除容器并重新安装：${BOLD}$SVC${NC}"
+        printf '%b\n' "${YELLOW}   容器将被移除后重新创建（数据目录保留）${NC}"
+        printf '\n'
+        print_container_info "$SVC"
+        printf '%b' "${RED}确认重新安装？[y/N]：${NC} "
+        read -r _confirm
+        case "$_confirm" in
+            y|Y) ;;
+            *)
+                printf '%b\n' "${YELLOW}❌ 操作已取消${NC}"
+                exit 0
+                ;;
+        esac
+        dispatch "stop" "$SVC"
+        printf '\n'
         bash "$SCRIPT_DIR/install.sh" "$SVC"
         ;;
 
