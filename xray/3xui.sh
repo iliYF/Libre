@@ -140,8 +140,32 @@ _init_env() {
     cur_password=$(read_env "XUI_PASSWORD" "")
     cur_web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
 
-    # 端口、用户名、密码均已配置且密码非空，直接返回
+    # 端口、用户名、密码均已配置且密码非空时：
+    # - WebBasePath 也已设置（含主动设为空的 skip 情况除外）→ 直接返回
+    # - WebBasePath 尚未写入 .env → 仅补充询问 WebBasePath
     if [ -n "$cur_port" ] && [ -n "$cur_username" ] && [ -n "$cur_password" ]; then
+        # 检查 .env 中是否存在 XUI_WEB_BASE_PATH 这一行（无论值是否为空）
+        if grep -qE '^XUI_WEB_BASE_PATH=' "$env_file" 2>/dev/null; then
+            return 0
+        fi
+        # WebBasePath 行不存在，补充询问
+        printf '%b\n' "${CYAN}🔧 补充配置 WebBasePath${NC}"
+        local rand_path
+        rand_path=$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 7)
+        local default_web_base_path="/${rand_path}"
+        local web_base_path=""
+        printf '%b\n' "${BLUE}面板 WebBasePath（可选）:${NC}"
+        printf '%b\n' "   回车使用默认值 ${BOLD}${default_web_base_path}${NC}，输入自定义路径，或输入 ${BOLD}skip${NC} 跳过不设置"
+        printf '%b' "   > "
+        read -r input_web_base_path
+        if [ -z "$input_web_base_path" ]; then
+            web_base_path="$default_web_base_path"
+        elif [ "$input_web_base_path" = "skip" ]; then
+            web_base_path=""
+        else
+            web_base_path="$input_web_base_path"
+        fi
+        _save_env "$env_file" "$cur_port" "$cur_username" "$cur_password" "$web_base_path"
         return 0
     fi
 
@@ -574,10 +598,11 @@ logs() {
 }
 
 # 显示当前面板配置（端口、用户名、WebBasePath 等）
+# x-ui setting -show 会交互式询问是否生成 SSL 证书，用 echo Y 自动确认生成
 show_config() {
     is_running || { printf '%b\n' "${RED}❌ 容器未运行，请先执行 start${NC}"; return 1; }
     printf '%b\n' "${CYAN}📋 当前面板配置:${NC}"
-    cli setting -show true
+    echo "Y" | docker exec -i "$CONTAINER" /app/x-ui setting -show true
 }
 
 # 显示公网 IP

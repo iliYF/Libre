@@ -95,38 +95,42 @@ create_lantern_data_dir() {
     printf '%b\n' "${GREEN}✅ Lantern 数据目录已就绪：$data_dir${NC}"
 }
 
-# 创建默认的 .env 文件（如果不存在）
+# 创建默认的 .env 文件（如果不存在则创建，存在则加载已有值重新确认）
 create_default_env() {
     local env_file="$LIBRE_APP_DIR/lantern/.env"
-    
-    if [ ! -f "$env_file" ]; then
-        printf '%b\n' "${CYAN}🔧 配置 Lantern Server Manager 端口${NC}"
-        
-        # 交互式配置 API 端口
-        local api_port=18080
-        printf '%b\n' "${BLUE}请输入 Web UI / REST API 端口 [默认: 18080]:${NC}"
-        read -r input_api_port
-        if [ -n "$input_api_port" ]; then
-            if [[ "$input_api_port" =~ ^[0-9]+$ ]] && [ "$input_api_port" -ge 1024 ] && [ "$input_api_port" -le 65535 ]; then
-                api_port="$input_api_port"
-            else
-                printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: 18080${NC}"
-            fi
+
+    printf '%b\n' "${CYAN}🔧 配置 Lantern Server Manager 端口${NC}"
+
+    # 读取已有配置作为默认值（.env 不存在时使用内置默认值）
+    local cur_api_port cur_vpn_port
+    cur_api_port=$(grep -E '^API_PORT=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+    cur_vpn_port=$(grep -E '^VPN_PORT=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+
+    # API 端口
+    local api_port="${cur_api_port:-18080}"
+    printf '%b\n' "${BLUE}请输入 Web UI / REST API 端口 [默认: $api_port]:${NC}"
+    read -r input_api_port
+    if [ -n "$input_api_port" ]; then
+        if [[ "$input_api_port" =~ ^[0-9]+$ ]] && [ "$input_api_port" -ge 1024 ] && [ "$input_api_port" -le 65535 ]; then
+            api_port="$input_api_port"
+        else
+            printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: $api_port${NC}"
         fi
-        
-        # 交互式配置 VPN 端口
-        local vpn_port=30001
-        printf '%b\n' "${BLUE}请输入 VPN 端口 (TCP) [默认: 30001]:${NC}"
-        read -r input_vpn_port
-        if [ -n "$input_vpn_port" ]; then
-            if [[ "$input_vpn_port" =~ ^[0-9]+$ ]] && [ "$input_vpn_port" -ge 1024 ] && [ "$input_vpn_port" -le 65535 ]; then
-                vpn_port="$input_vpn_port"
-            else
-                printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: 30001${NC}"
-            fi
+    fi
+
+    # VPN 端口
+    local vpn_port="${cur_vpn_port:-30001}"
+    printf '%b\n' "${BLUE}请输入 VPN 端口 (TCP) [默认: $vpn_port]:${NC}"
+    read -r input_vpn_port
+    if [ -n "$input_vpn_port" ]; then
+        if [[ "$input_vpn_port" =~ ^[0-9]+$ ]] && [ "$input_vpn_port" -ge 1024 ] && [ "$input_vpn_port" -le 65535 ]; then
+            vpn_port="$input_vpn_port"
+        else
+            printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: $vpn_port${NC}"
         fi
-        
-        cat > "$env_file" << EOF
+    fi
+
+    cat > "$env_file" << EOF
 # Lantern Server Manager 端口配置
 # 修改后重启服务生效
 
@@ -136,60 +140,86 @@ API_PORT=$api_port
 # VPN 端口（TCP）
 VPN_PORT=$vpn_port
 EOF
-        printf '%b\n' "${GREEN}✅ 已创建 .env 配置文件：$env_file${NC}"
-        printf '%b\n' "   ${BLUE}🌐 Web UI 端口:${NC} $api_port"
-        printf '%b\n' "   ${BLUE}🔒 VPN 端口:${NC} $vpn_port"
-    else
-        printf '%b\n' "${YELLOW}⚠️  .env 文件已存在：$env_file${NC}"
-    fi
+    printf '%b\n' "${GREEN}✅ 已保存 .env 配置文件：$env_file${NC}"
+    printf '%b\n' "   ${BLUE}🌐 Web UI 端口:${NC} $api_port"
+    printf '%b\n' "   ${BLUE}🔒 VPN 端口:${NC} $vpn_port"
 }
 
 # 创建 Xray 默认的 .env 文件（如果不存在）
 create_xray_default_env() {
     local env_file="$LIBRE_APP_DIR/xray/.env"
-    
-    if [ ! -f "$env_file" ]; then
-        printf '%b\n' "${CYAN}🔧 配置 3x-ui 面板${NC}"
-        
-        # 交互式配置面板端口
-        local port=2026
-        printf '%b\n' "${BLUE}请输入 3x-ui 面板端口 [默认: 2026]:${NC}"
-        read -r input_port
-        if [ -n "$input_port" ]; then
-            if [[ "$input_port" =~ ^[0-9]+$ ]] && [ "$input_port" -ge 1024 ] && [ "$input_port" -le 65535 ]; then
-                port="$input_port"
-            else
-                printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: 2026${NC}"
-            fi
-        fi
 
-        # 交互式配置用户名
-        local username="admin"
-        printf '%b\n' "${BLUE}请输入 3x-ui 面板登录用户名 [默认: admin]:${NC}"
-        read -r input_username
-        if [ -n "$input_username" ]; then
-            if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
-                username="$input_username"
-            else
-                printf '%b\n' "${YELLOW}⚠️  用户名无效（仅允许字母、数字、下划线、减号，长度≥3），使用默认值: admin${NC}"
-            fi
+    printf '%b\n' "${CYAN}🔧 配置 3x-ui 面板${NC}"
+
+    # 读取已有配置作为默认值（.env 不存在时使用内置默认值）
+    local cur_port cur_username cur_password cur_web_base_path
+    cur_port=$(grep -E '^XUI_PORT=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+    cur_username=$(grep -E '^XUI_USERNAME=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+    cur_password=$(grep -E '^XUI_PASSWORD=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+    cur_web_base_path=$(grep -E '^XUI_WEB_BASE_PATH=' "$env_file" 2>/dev/null | cut -d'=' -f2- | tr -d '\r')
+
+    # 端口
+    local port="${cur_port:-2026}"
+    printf '%b\n' "${BLUE}请输入 3x-ui 面板端口 [默认: $port]:${NC}"
+    read -r input_port
+    if [ -n "$input_port" ]; then
+        if [[ "$input_port" =~ ^[0-9]+$ ]] && [ "$input_port" -ge 1024 ] && [ "$input_port" -le 65535 ]; then
+            port="$input_port"
+        else
+            printf '%b\n' "${YELLOW}⚠️  端口无效，使用默认值: $port${NC}"
         fi
-        
-        # 交互式配置密码
-        local password="admin123"
-        printf '%b\n' "${BLUE}请输入 3x-ui 面板登录密码 [默认: admin123]:${NC}"
-        read -r input_password
-        if [ -n "$input_password" ]; then
-            if [ ${#input_password} -ge 6 ]; then
-                password="$input_password"
-            else
-                printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用默认值: admin123${NC}"
-            fi
+    fi
+
+    # 用户名
+    local username="${cur_username:-admin}"
+    printf '%b\n' "${BLUE}请输入 3x-ui 面板登录用户名 [默认: $username]:${NC}"
+    read -r input_username
+    if [ -n "$input_username" ]; then
+        if [[ "$input_username" =~ ^[a-zA-Z0-9_-]+$ ]] && [ ${#input_username} -ge 3 ]; then
+            username="$input_username"
+        else
+            printf '%b\n' "${YELLOW}⚠️  用户名无效（仅允许字母、数字、下划线、减号，长度≥3），使用默认值: $username${NC}"
         fi
-        
-        cat > "$env_file" << EOF
+    fi
+
+    # 密码
+    local password="${cur_password:-admin123}"
+    printf '%b\n' "${BLUE}请输入 3x-ui 面板登录密码 [默认: ${password:0:2}****]:${NC}"
+    read -r input_password
+    if [ -n "$input_password" ]; then
+        if [ ${#input_password} -ge 6 ]; then
+            password="$input_password"
+        else
+            printf '%b\n' "${YELLOW}⚠️  密码长度不足（至少6位），使用默认值${NC}"
+        fi
+    fi
+
+    # WebBasePath
+    local rand_path
+    rand_path=$(cat /dev/urandom | tr -dc 'a-z0-9' | head -c 7)
+    # 已有值时以已有值为默认，否则用随机生成值
+    local default_web_base_path="${cur_web_base_path:-/${rand_path}}"
+    local web_base_path=""
+    printf '%b\n' "${BLUE}面板 WebBasePath（可选）:${NC}"
+    if [ -n "$cur_web_base_path" ]; then
+        printf '%b\n' "   回车保留当前值 ${BOLD}${default_web_base_path}${NC}，输入新路径，或输入 ${BOLD}skip${NC} 清除不设置"
+    else
+        printf '%b\n' "   回车使用默认值 ${BOLD}${default_web_base_path}${NC}，输入自定义路径，或输入 ${BOLD}skip${NC} 跳过不设置"
+    fi
+    printf '%b' "   > "
+    read -r input_web_base_path
+    if [ -z "$input_web_base_path" ]; then
+        web_base_path="$default_web_base_path"
+    elif [ "$input_web_base_path" = "skip" ]; then
+        web_base_path=""
+    else
+        web_base_path="$input_web_base_path"
+    fi
+
+    # 写入 .env
+    cat > "$env_file" << EOF
 # 3x-ui 配置
-# 首次安装后请修改为安全的用户名和密码
+# 修改后重启服务生效
 
 # 面板端口
 XUI_PORT=$port
@@ -200,13 +230,20 @@ XUI_USERNAME=$username
 # 面板登录密码（建议修改为强密码）
 XUI_PASSWORD=$password
 EOF
-        printf '%b\n' "${GREEN}✅ 已创建 Xray .env 配置文件：$env_file${NC}"
-        printf '%b\n' "   ${BLUE}🌐 面板端口:${NC} $port"
-        printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
-        local masked_pwd="${password:0:2}****"
-        printf '%b\n' "   ${BLUE}🔑 密码:${NC} $masked_pwd"
+    # WebBasePath 仅在非空时写入
+    if [ -n "$web_base_path" ]; then
+        printf '\n# 面板访问路径前缀（如 /abc1234）\nXUI_WEB_BASE_PATH=%s\n' "$web_base_path" >> "$env_file"
+    fi
+
+    printf '%b\n' "${GREEN}✅ 已保存 Xray .env 配置文件：$env_file${NC}"
+    printf '%b\n' "   ${BLUE}🌐 面板端口:${NC} $port"
+    printf '%b\n' "   ${BLUE}👤 用户名:${NC} $username"
+    local masked_pwd="${password:0:2}****"
+    printf '%b\n' "   ${BLUE}🔑 密码:${NC} $masked_pwd"
+    if [ -n "$web_base_path" ]; then
+        printf '%b\n' "   ${BLUE}🔗 WebBasePath:${NC} $web_base_path"
     else
-        printf '%b\n' "${YELLOW}⚠️  Xray .env 文件已存在：$env_file${NC}"
+        printf '%b\n' "   ${BLUE}🔗 WebBasePath:${NC} （未设置）"
     fi
 }
 
