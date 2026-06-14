@@ -171,10 +171,11 @@ do_clean() {
 print_container_info() {
     local svc="$1"
     local containers=()
+    local xray_container="3x-ui"
     case "$svc" in
         lantern) containers=("lantern") ;;
-        xray)    containers=("xray") ;;
-        all)     containers=("lantern" "xray") ;;
+        xray)    containers=("$xray_container") ;;
+        all)     containers=("lantern" "$xray_container") ;;
     esac
 
     printf '%b\n' "${BOLD}当前容器状态：${NC}"
@@ -396,8 +397,8 @@ case "$CMD" in
     remove)
         SVC=$(parse_service "${1:-all}")
         shift || true
-        printf '%b\n' "${YELLOW}⚠️  即将停止并删除容器：${BOLD}$SVC${NC}"
-        printf '%b\n' "${YELLOW}   此操作不可撤销，容器将被移除（数据目录保留）${NC}"
+        printf '%b\n' "${CYAN}⚠️  即将停止并删除容器：${BOLD}$SVC${NC}"
+        printf '%b\n' "${CYAN}   此操作不可撤销，容器将被移除（数据目录保留）${NC}"
         printf '\n'
         print_container_info "$SVC"
         printf '%b' "${RED}确认删除？[y/N]：${NC} "

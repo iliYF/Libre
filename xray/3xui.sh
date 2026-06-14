@@ -268,7 +268,7 @@ start() {
     web_base_path=$(read_env "XUI_WEB_BASE_PATH" "")
 
     printf '%b\n' "${CYAN}🚀 启动 3x-ui，面板端口: ${BOLD}$port${NC}"
-    docker_compose down && docker_compose up -d || { printf '%b\n' "${RED}❌ 容器启动失败${NC}"; return 1; }
+    _pull_down_up || return 1
 
     # 轮询等待容器就绪（最多 30 秒）
     printf '%b' "${YELLOW}⏳ 等待服务就绪"
@@ -549,17 +549,17 @@ EOF
     printf '%b\n' "${GREEN}✅ 配置已保存到 .env${NC}"
 }
 
+# 拉取最新镜像 → 停止旧容器 → 启动新容器（内部复用函数）
+_pull_down_up() {
+    printf '%b\n' "${CYAN}⬇️  拉取最新镜像...${NC}"
+    docker_compose pull || { printf '%b\n' "${RED}❌ 镜像拉取失败${NC}"; return 1; }
+    docker_compose down || { printf '%b\n' "${RED}❌ 停止容器失败${NC}"; return 1; }
+    docker_compose up -d || { printf '%b\n' "${RED}❌ 容器启动失败${NC}"; return 1; }
+}
+
 # 拉取最新镜像并重启
 update() {
-    printf '%b\n' "${CYAN}⬆️  拉取最新镜像...${NC}"
-    docker_compose pull || { printf '%b\n' "${RED}❌ 镜像拉取失败${NC}"; return 1; }
-
-    local port
-    port=$(get_port)
-    [ -z "$port" ] && port=$(read_env "XUI_PORT" "$DEFAULT_PORT")
-
-    printf '%b\n' "${CYAN}🔄 重启服务 (端口: $port)...${NC}"
-    start "$port"
+    _pull_down_up || return 1
     printf '%b\n' "${GREEN}✅ 更新完成${NC}"
 }
 
